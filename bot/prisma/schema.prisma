@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Reminder {
+  id         String   @id @default(cuid())
+  chatId     String
+  text       String
+  fireAt     DateTime
+  timezone   String   @default("Europe/Amsterdam")
+  recurrence String?
+  fired      Boolean  @default(false)
+  cancelled  Boolean  @default(false)
+  bullJobId  String?
+  createdAt  DateTime @default(now())
+
+  @@index([chatId])
+}
+
+model ListItem {
+  id        String   @id @default(cuid())
+  chatId    String
+  listName  String
+  text      String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([chatId, listName, done])
+}
+
+model Memory {
+  id        String   @id @default(cuid())
+  chatId    String
+  content   String
+  tags      String[]
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+}
+
+model NodeType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  useCount    Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model RelationshipType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  fromTypes   String[]
+  toTypes     String[]
+  useCount    Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model ReflectionLog {
+  id        String   @id @default(cuid())
+  summary   String
+  changes   String
+  createdAt DateTime @default(now())
+}
+
+model CalendarTokens {
+  id           String   @id @default(cuid())
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
