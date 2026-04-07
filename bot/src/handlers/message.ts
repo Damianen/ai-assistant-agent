@@ -2,7 +2,7 @@ import type { Context } from "grammy";
 import { parseIntent } from "../services/llm.js";
 import { createReminder } from "../services/reminders.js";
 import { getDailyBrief } from "../services/briefing.js";
-import { createCalendarEvent, getAuthUrl } from "../services/calendar.js";
+import { createCalendarEvent, listUpcomingEvents, getAuthUrl } from "../services/calendar.js";
 import { processWithBrain, enrichContextForMessage } from "../services/brain.js";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
@@ -121,6 +121,20 @@ export async function processText(ctx: Context, text: string): Promise<void> {
         } else {
           throw err;
         }
+      }
+      enrichContextForMessage(text).catch(() => {});
+      break;
+    }
+
+    case "query_calendar": {
+      const events = await listUpcomingEvents(intent.days);
+      if (events === "Calendar not connected.") {
+        const url = getAuthUrl();
+        await ctx.reply(
+          `I need access to your Google Calendar first.\nPlease authorize here: ${url}`,
+        );
+      } else {
+        await ctx.reply(events);
       }
       enrichContextForMessage(text).catch(() => {});
       break;

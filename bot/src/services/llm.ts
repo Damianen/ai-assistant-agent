@@ -47,6 +47,11 @@ const CreateCalendarEventSchema = z.object({
   description: z.string().optional(),
 });
 
+const QueryCalendarSchema = z.object({
+  intent: z.literal("query_calendar"),
+  days: z.number(),
+});
+
 const DailyBriefSchema = z.object({
   intent: z.literal("daily_brief"),
 });
@@ -64,6 +69,7 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   CreateMemorySchema,
   RecallSchema,
   CreateCalendarEventSchema,
+  QueryCalendarSchema,
   DailyBriefSchema,
   UnknownSchema,
 ]);
@@ -107,6 +113,11 @@ recall:
 create_calendar_event:
 { "intent": "create_calendar_event", "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)" }
 If no end time is specified, default to 1 hour after start.
+Use this for any request to add, create, or schedule a meeting, event, or appointment on the calendar. Do NOT use create_memory for calendar events.
+
+query_calendar:
+{ "intent": "query_calendar", "days": number }
+Use this when the user wants to check, view, or list their calendar events. "days" is how far ahead to look (1 = today, 7 = this week, 30 = this month).
 
 daily_brief:
 { "intent": "daily_brief" }
