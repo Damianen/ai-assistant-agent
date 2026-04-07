@@ -168,7 +168,7 @@ async function toolQueryGraph(input: {
 
   const query = [
     `MATCH (n:${input.node_type})`,
-    `WHERE ${whereClause}`,
+    ...(whereClause ? [`WHERE ${whereClause}`] : []),
     `OPTIONAL MATCH path = (n)-[*1..${depth}]-(m)`,
     `RETURN n, path, m`,
   ].join(" ");
