@@ -1,5 +1,5 @@
 services:
-  postgres:
+  netflu-db:
     image: postgres:16
     environment:
       POSTGRES_DB: netflu
@@ -46,7 +46,7 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.scope=netflu"
     depends_on:
-      postgres:
+      netflu-db:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -54,7 +54,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://netflu:netflu@postgres:5432/netflu
+      DATABASE_URL: postgresql://netflu:netflu@netflu-db:5432/netflu
       REDIS_URL: redis://redis:6379
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
