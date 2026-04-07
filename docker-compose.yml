@@ -2,13 +2,13 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: memorae
-      POSTGRES_USER: memorae
-      POSTGRES_PASSWORD: memorae
+      POSTGRES_DB: netflu
+      POSTGRES_USER: netflu
+      POSTGRES_PASSWORD: netflu
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U memorae"]
+      test: ["CMD-SHELL", "pg_isready -U netflu"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,6 +43,8 @@ services:
 
   bot:
     image: ghcr.io/damianen/ai-assistant-agent/bot:latest
+    labels:
+      - "com.centurylinklabs.watchtower.scope=netflu"
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,7 +54,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://memorae:memorae@postgres:5432/memorae
+      DATABASE_URL: postgresql://netflu:netflu@postgres:5432/netflu
       REDIS_URL: redis://redis:6379
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -71,6 +73,19 @@ services:
     networks:
       - internal
       - ingress-net
+
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json:ro
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_SCOPE: "netflu"
+    labels:
+      - "com.centurylinklabs.watchtower.scope=netflu"
+    restart: unless-stopped
 
 volumes:
   postgres_data:

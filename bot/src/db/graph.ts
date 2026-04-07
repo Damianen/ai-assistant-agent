@@ -2,7 +2,7 @@ import { FalkorDB } from "falkordb";
 import type { Graph } from "falkordb";
 import { logger } from "../lib/logger.js";
 
-const GRAPH_ID = "memorae_brain";
+const GRAPH_ID = "netflu_brain";
 
 let db: FalkorDB;
 let graph: Graph;
