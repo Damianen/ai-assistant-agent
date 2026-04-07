@@ -3,6 +3,7 @@ import { prisma } from "../db/prisma.js";
 import { runQuery } from "../db/graph.js";
 import { redis } from "../lib/redis.js";
 import { logger } from "../lib/logger.js";
+import { seedSchema } from "../db/schema-registry.js";
 
 const startTime = Date.now();
 
@@ -86,15 +87,59 @@ export async function handleHelp(ctx: Context): Promise<void> {
     '  "Remove milk from shopping list"\n',
     "Memory",
     '  "Remember that Sarah\'s birthday is March 12"',
-    '  "What do you know about Sarah?"\n',
+    '  "What do you know about Sarah?"',
+    '  "Forget about Sarah"',
+    '  "Remove the info about my trip to Paris"\n',
     "Briefing",
     '  "Give me my daily briefing"\n',
     "Voice",
     "  Send a voice message and I'll transcribe and process it\n",
     "Commands",
     "  /status — system health check",
+    "  /reset — erase entire knowledge base and start fresh",
     "  /help — this message",
   ];
 
   await ctx.reply(text.join("\n"));
+}
+
+const pendingResets = new Set<string>();
+
+export async function handleReset(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id?.toString();
+  if (!chatId) return;
+
+  if (!pendingResets.has(chatId)) {
+    pendingResets.add(chatId);
+    setTimeout(() => pendingResets.delete(chatId), 30_000);
+    await ctx.reply(
+      "This will erase your entire knowledge base (all memories, nodes, relationships, and schema).\n" +
+        "Send /reset again within 30 seconds to confirm.",
+    );
+    return;
+  }
+
+  pendingResets.delete(chatId);
+
+  try {
+    await ctx.replyWithChatAction("typing");
+
+    await runQuery("MATCH (n) DETACH DELETE n").catch((err) => {
+      logger.warn({ err }, "FalkorDB clear returned error (may be empty)");
+    });
+
+    await Promise.all([
+      prisma.nodeType.deleteMany(),
+      prisma.relationshipType.deleteMany(),
+      prisma.memory.deleteMany(),
+    ]);
+
+    await seedSchema();
+
+    await ctx.reply("Knowledge base has been reset. Starting fresh.");
+    logger.info({ chatId }, "Knowledge base reset by user");
+  } catch (err) {
+    logger.error({ err }, "/reset failed");
+    await ctx.reply("Failed to reset the knowledge base. Check logs.");
+  }
 }

@@ -251,6 +251,49 @@ async function toolMergeNodes(input: {
   return `Merged nodes (${idA} <- ${idB}): ${input.reason}`;
 }
 
+async function toolDeleteNode(input: {
+  node_type: string;
+  properties: Record<string, unknown>;
+}): Promise<string> {
+  assertSafeLabel(input.node_type, "node_type");
+
+  const params: Record<string, unknown> = {};
+  const entries = Object.entries(input.properties);
+
+  if (entries.length === 0) {
+    throw new Error("At least one property is required to identify the node to delete");
+  }
+
+  const whereClause = entries
+    .map(([k, v]) => {
+      assertSafeLabel(k, "property name");
+      const paramName = `d_${k}`;
+      params[paramName] = v;
+      return `n.${k} = $${paramName}`;
+    })
+    .join(" AND ");
+
+  const matchQuery = `MATCH (n:${input.node_type}) WHERE ${whereClause} RETURN n`;
+  const existing = await runQuery(matchQuery, params);
+
+  if (existing.length === 0) {
+    const propDisplay = entries
+      .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+      .join(", ");
+    return `No ${input.node_type} node found with {${propDisplay}} — nothing to delete`;
+  }
+
+  await runQuery(
+    `MATCH (n:${input.node_type}) WHERE ${whereClause} DETACH DELETE n`,
+    params,
+  );
+
+  const propDisplay = entries
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+    .join(", ");
+  return `Deleted ${input.node_type} node {${propDisplay}} and all its relationships`;
+}
+
 // ---------------------------------------------------------------------------
 // Tool definitions for Anthropic API
 // ---------------------------------------------------------------------------
@@ -406,6 +449,26 @@ export const BRAIN_TOOLS: Tool[] = [
       required: ["node_a_id", "node_b_id", "reason"],
     },
   },
+  {
+    name: "delete_node",
+    description:
+      "Delete a node and all its relationships from the knowledge graph. Use this when the user asks to forget or remove specific information.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        node_type: {
+          type: "string",
+          description: "Label of the node to delete (e.g. Person, Place)",
+        },
+        properties: {
+          type: "object",
+          description:
+            "Properties to identify the node to delete (e.g. {name: 'Sarah'})",
+        },
+      },
+      required: ["node_type", "properties"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -419,6 +482,7 @@ const handlers: Record<string, (input: any) => Promise<string>> = {
   query_graph: toolQueryGraph,
   propose_schema_addition: toolProposeSchemaAddition,
   merge_nodes: toolMergeNodes,
+  delete_node: toolDeleteNode,
 };
 
 export async function executeTool(

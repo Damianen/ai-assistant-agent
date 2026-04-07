@@ -39,6 +39,11 @@ const RecallSchema = z.object({
   query: z.string(),
 });
 
+const DeleteMemorySchema = z.object({
+  intent: z.literal("delete_memory"),
+  query: z.string(),
+});
+
 const CreateCalendarEventSchema = z.object({
   intent: z.literal("create_calendar_event"),
   summary: z.string(),
@@ -68,6 +73,7 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   RemoveListItemSchema,
   CreateMemorySchema,
   RecallSchema,
+  DeleteMemorySchema,
   CreateCalendarEventSchema,
   QueryCalendarSchema,
   DailyBriefSchema,
@@ -109,6 +115,10 @@ create_memory:
 
 recall:
 { "intent": "recall", "query": "string (what to look up)" }
+
+delete_memory:
+{ "intent": "delete_memory", "query": "string (what to forget/remove)" }
+Use this when the user asks to forget, remove, or delete something from memory (e.g. "forget about Sarah", "remove the info about my trip to Paris", "delete everything about X").
 
 create_calendar_event:
 { "intent": "create_calendar_event", "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)" }

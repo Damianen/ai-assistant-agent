@@ -103,6 +103,13 @@ export async function processText(ctx: Context, text: string): Promise<void> {
       break;
     }
 
+    case "delete_memory": {
+      await ctx.replyWithChatAction("typing");
+      const reply = await processWithBrain(text);
+      await ctx.reply(reply);
+      break;
+    }
+
     case "create_calendar_event": {
       try {
         const link = await createCalendarEvent(

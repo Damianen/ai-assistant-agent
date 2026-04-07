@@ -8,7 +8,7 @@ import { briefingCron } from "./jobs/briefing.cron.js";
 import { reflectionCron } from "./jobs/reflection.cron.js";
 import { handleMessage } from "./handlers/message.js";
 import { handleVoice } from "./handlers/voice.js";
-import { handleStatus, handleHelp } from "./handlers/commands.js";
+import { handleStatus, handleHelp, handleReset } from "./handlers/commands.js";
 import { seedSchema } from "./db/schema-registry.js";
 import { runQuery, closeGraph } from "./db/graph.js";
 import { isRateLimited } from "./lib/rate-limiter.js";
@@ -88,6 +88,7 @@ bot.on("message", async (ctx, next) => {
 // ---------------------------------------------------------------------------
 bot.command("status", handleStatus);
 bot.command("help", handleHelp);
+bot.command("reset", handleReset);
 
 // ---------------------------------------------------------------------------
 // Message handlers
