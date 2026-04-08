@@ -83,6 +83,11 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
 
 export type ParsedIntent = z.infer<typeof ParsedIntentSchema>;
 
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 function buildSystemPrompt(): string {
   const now = new Date().toLocaleDateString("en-US", {
     timeZone: TIMEZONE,
@@ -92,7 +97,7 @@ function buildSystemPrompt(): string {
     day: "numeric",
   });
 
-  return `You are a personal assistant parser. Extract intent from the user message and return ONLY valid JSON with no explanation, no markdown, no backticks.
+  return `You are a personal assistant parser. Extract intent from the user's latest message. Use prior messages in the conversation for context when resolving references like "this", "that", "it", "same time", etc. Return ONLY valid JSON with no explanation, no markdown, no backticks.
 
 Today: ${now}
 User timezone: ${TIMEZONE}
@@ -148,12 +153,20 @@ unknown:
 Return ONLY the JSON object.`;
 }
 
-export async function parseIntent(message: string): Promise<ParsedIntent> {
+export async function parseIntent(
+  message: string,
+  history: ChatHistoryMessage[] = [],
+): Promise<ParsedIntent> {
+  const messages: ChatHistoryMessage[] = [
+    ...history,
+    { role: "user", content: message },
+  ];
+
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 300,
     system: buildSystemPrompt(),
-    messages: [{ role: "user", content: message }],
+    messages,
   });
 
   const block = response.content[0];

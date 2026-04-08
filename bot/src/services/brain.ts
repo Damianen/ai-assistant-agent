@@ -28,10 +28,12 @@ ${schemaString}`;
 
 export async function processWithBrain(
   userMessage: string,
+  history: { role: "user" | "assistant"; content: string }[] = [],
 ): Promise<string> {
   const schemaString = await getSchemaAsString();
 
   const messages: MessageParam[] = [
+    ...history.map((m) => ({ role: m.role, content: m.content }) as MessageParam),
     { role: "user", content: userMessage },
   ];
 

@@ -1,5 +1,5 @@
 import type { Context } from "grammy";
-import { parseIntent } from "../services/llm.js";
+import { parseIntent, type ChatHistoryMessage } from "../services/llm.js";
 import { createReminder } from "../services/reminders.js";
 import { getDailyBrief } from "../services/briefing.js";
 import { createCalendarEvent, listUpcomingEvents, getAuthUrl } from "../services/calendar.js";
@@ -8,6 +8,7 @@ import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
 
 const TIMEZONE = "Europe/Amsterdam";
+const HISTORY_LIMIT = 20;
 
 function formatDate(date: Date): string {
   return date.toLocaleString("en-US", {
@@ -20,19 +21,56 @@ function formatDate(date: Date): string {
   });
 }
 
+async function getRecentHistory(chatId: string): Promise<ChatHistoryMessage[]> {
+  const rows = await prisma.chatMessage.findMany({
+    where: { chatId },
+    orderBy: { createdAt: "desc" },
+    take: HISTORY_LIMIT,
+  });
+
+  // Ensure alternating roles (merge consecutive same-role messages)
+  const ordered = rows.reverse();
+  const result: ChatHistoryMessage[] = [];
+  for (const row of ordered) {
+    const role = row.role as "user" | "assistant";
+    if (result.length > 0 && result[result.length - 1].role === role) {
+      result[result.length - 1].content += "\n" + row.content;
+    } else {
+      result.push({ role, content: row.content });
+    }
+  }
+  return result;
+}
+
 export async function processText(ctx: Context, text: string): Promise<void> {
   const chatId = ctx.chat?.id?.toString();
   if (!chatId) return;
 
   await ctx.replyWithChatAction("typing");
 
-  const intent = await parseIntent(text);
+  // Fetch history before storing the current message
+  const history = await getRecentHistory(chatId);
+
+  // Store the incoming user message
+  await prisma.chatMessage.create({
+    data: { chatId, role: "user", content: text },
+  });
+
+  // Helper: reply to user and store the bot's response
+  const reply = async (message: string) => {
+    await ctx.reply(message);
+    await prisma.chatMessage.create({
+      data: { chatId, role: "assistant", content: message },
+    }).catch(() => {}); // Don't fail the handler if storage fails
+  };
+
+  const intent = await parseIntent(text, history);
 
   switch (intent.intent) {
     case "create_reminder": {
       const fireAt = new Date(intent.datetime);
       await createReminder(chatId, intent.text, fireAt, intent.recurrence);
-      await ctx.reply(
+      await reply(
         `Got it! I'll remind you to ${intent.text} on ${formatDate(fireAt)}`,
       );
       enrichContextForMessage(text).catch(() => {});
@@ -43,7 +81,7 @@ export async function processText(ctx: Context, text: string): Promise<void> {
       await prisma.listItem.create({
         data: { chatId, listName: intent.listName, text: intent.text },
       });
-      await ctx.reply(`Added '${intent.text}' to your ${intent.listName} list ✓`);
+      await reply(`Added '${intent.text}' to your ${intent.listName} list ✓`);
       enrichContextForMessage(text).catch(() => {});
       break;
     }
@@ -54,12 +92,12 @@ export async function processText(ctx: Context, text: string): Promise<void> {
         orderBy: { createdAt: "asc" },
       });
       if (items.length === 0) {
-        await ctx.reply(`Your ${intent.listName} list is empty`);
+        await reply(`Your ${intent.listName} list is empty`);
       } else {
         const formatted = items
           .map((item, i) => `${i + 1}. ${item.text}`)
           .join("\n");
-        await ctx.reply(formatted);
+        await reply(formatted);
       }
       enrichContextForMessage(text).catch(() => {});
       break;
@@ -79,9 +117,9 @@ export async function processText(ctx: Context, text: string): Promise<void> {
           where: { id: item.id },
           data: { done: true },
         });
-        await ctx.reply(`Removed from your ${intent.listName} list ✓`);
+        await reply(`Removed from your ${intent.listName} list ✓`);
       } else {
-        await ctx.reply(
+        await reply(
           `Couldn't find '${intent.text}' in your ${intent.listName} list`,
         );
       }
@@ -91,22 +129,22 @@ export async function processText(ctx: Context, text: string): Promise<void> {
 
     case "create_memory": {
       await ctx.replyWithChatAction("typing");
-      const reply = await processWithBrain(text);
-      await ctx.reply(reply);
+      const brainReply = await processWithBrain(text, history);
+      await reply(brainReply);
       break;
     }
 
     case "recall": {
       await ctx.replyWithChatAction("typing");
-      const reply = await processWithBrain(text);
-      await ctx.reply(reply);
+      const brainReply = await processWithBrain(text, history);
+      await reply(brainReply);
       break;
     }
 
     case "delete_memory": {
       await ctx.replyWithChatAction("typing");
-      const reply = await processWithBrain(text);
-      await ctx.reply(reply);
+      const brainReply = await processWithBrain(text, history);
+      await reply(brainReply);
       break;
     }
 
@@ -122,11 +160,11 @@ export async function processText(ctx: Context, text: string): Promise<void> {
         const label = intent.recurrence
           ? `Recurring event created: ${intent.summary}`
           : `Event created: ${intent.summary}`;
-        await ctx.reply(`${label}\n${link}`);
+        await reply(`${label}\n${link}`);
       } catch (err) {
         if (err instanceof Error && err.message === "CALENDAR_NOT_CONNECTED") {
           const url = getAuthUrl();
-          await ctx.reply(
+          await reply(
             `I need access to your Google Calendar first.\nPlease authorize here: ${url}`,
           );
         } else {
@@ -141,11 +179,11 @@ export async function processText(ctx: Context, text: string): Promise<void> {
       const events = await listUpcomingEvents(intent.days);
       if (events === "Calendar not connected.") {
         const url = getAuthUrl();
-        await ctx.reply(
+        await reply(
           `I need access to your Google Calendar first.\nPlease authorize here: ${url}`,
         );
       } else {
-        await ctx.reply(events);
+        await reply(events);
       }
       enrichContextForMessage(text).catch(() => {});
       break;
@@ -153,14 +191,14 @@ export async function processText(ctx: Context, text: string): Promise<void> {
 
     case "daily_brief": {
       const brief = await getDailyBrief(chatId);
-      await ctx.reply(brief);
+      await reply(brief);
       break;
     }
 
     case "unknown": {
       await ctx.replyWithChatAction("typing");
-      const reply = await processWithBrain(text);
-      await ctx.reply(reply);
+      const brainReply = await processWithBrain(text, history);
+      await reply(brainReply);
       break;
     }
   }
