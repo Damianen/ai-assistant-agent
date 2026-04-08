@@ -117,8 +117,12 @@ export async function processText(ctx: Context, text: string): Promise<void> {
           new Date(intent.start),
           new Date(intent.end),
           intent.description,
+          intent.recurrence,
         );
-        await ctx.reply(`Event created: ${intent.summary}\n${link}`);
+        const label = intent.recurrence
+          ? `Recurring event created: ${intent.summary}`
+          : `Event created: ${intent.summary}`;
+        await ctx.reply(`${label}\n${link}`);
       } catch (err) {
         if (err instanceof Error && err.message === "CALENDAR_NOT_CONNECTED") {
           const url = getAuthUrl();

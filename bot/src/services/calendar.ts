@@ -95,6 +95,7 @@ export async function createCalendarEvent(
   start: Date,
   end: Date,
   description?: string,
+  recurrence?: string | null,
 ): Promise<string> {
   const auth = await getAuthedClient();
   if (!auth) throw new Error("CALENDAR_NOT_CONNECTED");
@@ -107,6 +108,7 @@ export async function createCalendarEvent(
       description,
       start: { dateTime: start.toISOString(), timeZone: TIMEZONE },
       end: { dateTime: end.toISOString(), timeZone: TIMEZONE },
+      ...(recurrence ? { recurrence: [recurrence] } : {}),
     },
   });
 

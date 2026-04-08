@@ -50,6 +50,7 @@ const CreateCalendarEventSchema = z.object({
   start: z.string(),
   end: z.string(),
   description: z.string().optional(),
+  recurrence: z.string().nullable().optional(),
 });
 
 const QueryCalendarSchema = z.object({
@@ -121,9 +122,18 @@ delete_memory:
 Use this when the user asks to forget, remove, or delete something from memory (e.g. "forget about Sarah", "remove the info about my trip to Paris", "delete everything about X").
 
 create_calendar_event:
-{ "intent": "create_calendar_event", "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)" }
+{ "intent": "create_calendar_event", "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)", "recurrence": "RRULE string or null" }
 If no end time is specified, default to 1 hour after start.
 Use this for any request to add, create, or schedule a meeting, event, or appointment on the calendar. Do NOT use create_memory for calendar events.
+If the user says "daily", "every day", "every weekday", "weekly", "every Monday", etc., extract a recurrence rule:
+- "daily" / "every day" → "RRULE:FREQ=DAILY"
+- "every weekday" → "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+- "weekly" / "every week" → "RRULE:FREQ=WEEKLY"
+- "every Monday" → "RRULE:FREQ=WEEKLY;BYDAY=MO"
+- "monthly" → "RRULE:FREQ=MONTHLY"
+- With end date: append ";UNTIL=YYYYMMDDTHHMMSSZ"
+If the event is not recurring, set recurrence to null.
+For recurring events, set "start" to the first occurrence.
 
 query_calendar:
 { "intent": "query_calendar", "days": number }
