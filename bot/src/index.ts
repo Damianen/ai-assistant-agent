@@ -10,6 +10,7 @@ import { calendarNotifyCron } from "./jobs/calendar-notify.cron.js";
 import { accountabilityWorker } from "./jobs/accountability.worker.js";
 import { eveningCheckInCron } from "./jobs/evening-checkin.cron.js";
 import { weeklyReportCron } from "./jobs/weekly-report.cron.js";
+import { habitNudgeCron } from "./jobs/habit-nudge.cron.js";
 import { handleMessage } from "./handlers/message.js";
 import { handleVoice } from "./handlers/voice.js";
 import { handleStatus, handleHelp, handleReset } from "./handlers/commands.js";
@@ -119,6 +120,7 @@ function shutdown(signal: string) {
     calendarNotifyCron.stop();
     eveningCheckInCron.stop();
     weeklyReportCron.stop();
+    habitNudgeCron.stop();
     await reminderWorker.close();
     await accountabilityWorker.close();
     await prisma.$disconnect();

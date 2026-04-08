@@ -1,6 +1,7 @@
 import { Queue } from "bullmq";
 import { prisma } from "../db/prisma.js";
 import { redis } from "../lib/redis.js";
+import { bot } from "../lib/telegram.js";
 import { logger } from "../lib/logger.js";
 
 const TIMEZONE = "Europe/Amsterdam";
@@ -376,6 +377,11 @@ export async function processCheckInResponse(
     parts.push("Couldn't match your response to the check-in items.");
   }
 
+  // Check for streak milestones after logging completions
+  checkStreakMilestones(chatId).catch((err) =>
+    logger.error({ err }, "Streak milestone check failed"),
+  );
+
   return { summary: parts.join(" ") };
 }
 
@@ -469,6 +475,128 @@ export async function getWeeklyStats(
     habits: habitStats,
     overallScore,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Cancel commitment / deactivate habit
+// ---------------------------------------------------------------------------
+
+export async function cancelCommitment(chatId: string, searchText: string) {
+  const commitment = await prisma.commitment.findFirst({
+    where: {
+      chatId,
+      status: "pending",
+      text: { contains: searchText, mode: "insensitive" },
+    },
+  });
+
+  if (!commitment) return null;
+
+  if (commitment.bullJobId) {
+    const job = await accountabilityQueue.getJob(commitment.bullJobId);
+    if (job) await job.remove().catch(() => {});
+  }
+
+  return prisma.commitment.update({
+    where: { id: commitment.id },
+    data: { status: "cancelled" },
+  });
+}
+
+export async function deactivateHabit(chatId: string, searchText: string) {
+  const habit = await prisma.habit.findFirst({
+    where: {
+      chatId,
+      active: true,
+      text: { contains: searchText, mode: "insensitive" },
+    },
+  });
+
+  if (!habit) return null;
+
+  return prisma.habit.update({
+    where: { id: habit.id },
+    data: { active: false },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Query / overview formatting
+// ---------------------------------------------------------------------------
+
+export async function formatCommitmentsOverview(
+  chatId: string,
+): Promise<string> {
+  const commitments = await getPendingCommitments(chatId);
+
+  if (commitments.length === 0) return "No pending commitments.";
+
+  const lines = commitments.map((c) => {
+    const deadline = c.deadline.toLocaleDateString("en-US", {
+      timeZone: TIMEZONE,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const daysLeft = Math.ceil(
+      (c.deadline.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+    );
+    const urgency =
+      daysLeft <= 0 ? " (OVERDUE)" : daysLeft <= 1 ? " (due today)" : "";
+    return `- ${c.text} — by ${deadline}${urgency}`;
+  });
+
+  return `Pending commitments:\n${lines.join("\n")}`;
+}
+
+export async function formatHabitsOverview(chatId: string): Promise<string> {
+  const habitStatus = await getTodaysHabitStatus(chatId);
+
+  if (habitStatus.length === 0) return "No active habits.";
+
+  const lines = await Promise.all(
+    habitStatus.map(async (h) => {
+      const streak = await getHabitStreak(h.habit.id);
+      const todayMark = h.completedToday ? " ✓ today" : "";
+      const streakLabel = streak > 0 ? ` (${streak}w streak)` : "";
+      return `- ${h.habit.text}: ${h.completionsThisWeek}/${h.target} this week${todayMark}${streakLabel}`;
+    }),
+  );
+
+  return `Active habits:\n${lines.join("\n")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Streak milestones
+// ---------------------------------------------------------------------------
+
+const MILESTONE_WEEKS = [1, 4, 8, 12, 26, 52];
+
+export async function checkStreakMilestones(chatId: string): Promise<void> {
+  const habits = await getActiveHabits(chatId);
+
+  for (const habit of habits) {
+    const streak = await getHabitStreak(habit.id);
+    if (!MILESTONE_WEEKS.includes(streak)) continue;
+
+    const redisKey = `streak-milestone:${habit.id}:${streak}`;
+    if (await redis.exists(redisKey)) continue;
+
+    const label =
+      streak === 1
+        ? "1 week"
+        : streak < 52
+          ? `${streak} weeks`
+          : "1 year";
+
+    await bot.api.sendMessage(
+      chatId,
+      `🔥 ${label} streak on "${habit.text}"! Keep it going.`,
+    );
+    await redis.set(redisKey, "1", "EX", 30 * 24 * 60 * 60); // 30 day TTL
+  }
 }
 
 // ---------------------------------------------------------------------------

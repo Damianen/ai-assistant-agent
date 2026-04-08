@@ -99,6 +99,7 @@ enum CommitmentStatus {
   completed
   missed
   rescheduled
+  cancelled
 }
 
 model Commitment {

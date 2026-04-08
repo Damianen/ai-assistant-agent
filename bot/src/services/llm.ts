@@ -102,6 +102,24 @@ const UpdateAccountabilitySettingsSchema = z.object({
   eveningHour: z.number().optional(),
 });
 
+const QueryCommitmentsSchema = z.object({
+  intent: z.literal("query_commitments"),
+});
+
+const QueryHabitsSchema = z.object({
+  intent: z.literal("query_habits"),
+});
+
+const CancelCommitmentSchema = z.object({
+  intent: z.literal("cancel_commitment"),
+  commitmentText: z.string(),
+});
+
+const DeactivateHabitSchema = z.object({
+  intent: z.literal("deactivate_habit"),
+  habitText: z.string(),
+});
+
 const DailyBriefSchema = z.object({
   intent: z.literal("daily_brief"),
 });
@@ -128,6 +146,10 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   RescheduleCommitmentSchema,
   AccountabilityCheckInSchema,
   UpdateAccountabilitySettingsSchema,
+  QueryCommitmentsSchema,
+  QueryHabitsSchema,
+  CancelCommitmentSchema,
+  DeactivateHabitSchema,
   DailyBriefSchema,
   UnknownSchema,
 ]);
@@ -223,6 +245,22 @@ Use ONLY when the user is responding to an accountability check-in message from 
 update_accountability_settings:
 { "intent": "update_accountability_settings", "morningHour": number (0-23, optional), "eveningHour": number (0-23, optional) }
 Use when the user wants to change their morning briefing or evening check-in time. Examples: "set morning briefing to 7am", "change evening check-in to 10pm".
+
+query_commitments:
+{ "intent": "query_commitments" }
+Use when the user wants to see their current commitments. Examples: "what are my commitments?", "show my pending commitments", "what did I commit to?".
+
+query_habits:
+{ "intent": "query_habits" }
+Use when the user wants to see their habits and progress. Examples: "how are my habits going?", "show my habits", "what habits am I tracking?".
+
+cancel_commitment:
+{ "intent": "cancel_commitment", "commitmentText": "string (partial match ok)" }
+Use when the user wants to cancel or drop a commitment entirely. Examples: "cancel my commitment to the report", "drop the gym goal", "I don't want to do the reading anymore".
+
+deactivate_habit:
+{ "intent": "deactivate_habit", "habitText": "string (partial match ok)" }
+Use when the user wants to stop tracking a habit. Examples: "stop tracking exercise", "remove the meditation habit", "I don't want to track reading anymore".
 
 daily_brief:
 { "intent": "daily_brief" }

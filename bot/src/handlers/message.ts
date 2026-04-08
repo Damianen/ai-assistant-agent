@@ -8,12 +8,16 @@ import {
   createCommitment,
   completeCommitment,
   rescheduleCommitment,
+  cancelCommitment,
   createHabit,
+  deactivateHabit,
   getCheckInState,
   getCheckInItems,
   clearCheckInState,
   processCheckInResponse,
   updateAccountabilitySettings,
+  formatCommitmentsOverview,
+  formatHabitsOverview,
 } from "../services/accountability.js";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
@@ -283,6 +287,42 @@ export async function processText(ctx: Context, text: string): Promise<void> {
       const results = await processCheckInResponse(chatId, intent.items);
       clearCheckInState(chatId);
       await reply(results.summary);
+      break;
+    }
+
+    case "query_commitments": {
+      const overview = await formatCommitmentsOverview(chatId);
+      await reply(overview);
+      break;
+    }
+
+    case "query_habits": {
+      const overview = await formatHabitsOverview(chatId);
+      await reply(overview);
+      break;
+    }
+
+    case "cancel_commitment": {
+      const result = await cancelCommitment(chatId, intent.commitmentText);
+      if (result) {
+        await reply(`Cancelled "${result.text}".`);
+      } else {
+        await reply(
+          `Couldn't find a pending commitment matching "${intent.commitmentText}".`,
+        );
+      }
+      break;
+    }
+
+    case "deactivate_habit": {
+      const result = await deactivateHabit(chatId, intent.habitText);
+      if (result) {
+        await reply(`Stopped tracking "${result.text}".`);
+      } else {
+        await reply(
+          `Couldn't find an active habit matching "${intent.habitText}".`,
+        );
+      }
       break;
     }
 
