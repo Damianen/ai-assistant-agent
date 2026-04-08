@@ -12,8 +12,9 @@ const accountabilityQueue = new Queue("accountability", { connection: redis });
 // ---------------------------------------------------------------------------
 
 interface CheckInState {
-  mode: "evening_checkin" | "commitment_followup";
+  mode: "evening_checkin" | "commitment_followup" | "post_meeting";
   pendingItemIds: string[];
+  eventSummary?: string;
   expiresAt: number;
 }
 
@@ -40,6 +41,19 @@ export function getCheckInState(chatId: string): CheckInState | null {
     return null;
   }
   return state;
+}
+
+export function setPostMeetingState(
+  chatId: string,
+  eventSummary: string,
+  ttlMs = 30 * 60 * 1000,
+): void {
+  activeCheckIns.set(chatId, {
+    mode: "post_meeting",
+    pendingItemIds: [],
+    eventSummary,
+    expiresAt: Date.now() + ttlMs,
+  });
 }
 
 export function clearCheckInState(chatId: string): void {
@@ -197,6 +211,37 @@ export async function logHabitCompletion(
   });
 }
 
+export async function skipHabitToday(
+  chatId: string,
+  searchText: string,
+  reason?: string,
+) {
+  const habit = await prisma.habit.findFirst({
+    where: {
+      chatId,
+      active: true,
+      text: { contains: searchText, mode: "insensitive" },
+    },
+  });
+
+  if (!habit) return null;
+
+  const today = startOfTodayInTz();
+  await prisma.habitLog.upsert({
+    where: { habitId_date: { habitId: habit.id, date: today } },
+    create: {
+      habitId: habit.id,
+      date: today,
+      completed: false,
+      skipped: true,
+      skipReason: reason ?? null,
+    },
+    update: { completed: false, skipped: true, skipReason: reason ?? null },
+  });
+
+  return habit;
+}
+
 export async function getActiveHabits(chatId: string) {
   return prisma.habit.findMany({
     where: { chatId, active: true },
@@ -217,18 +262,21 @@ export async function getTodaysHabitStatus(chatId: string) {
         where: {
           habitId: habit.id,
           date: { gte: weekAgo, lte: today },
-          completed: true,
         },
       });
 
-      const completedToday = logs.some(
+      const todayLog = logs.find(
         (l) => l.date.getTime() === today.getTime(),
       );
+      const completedToday = todayLog?.completed === true;
+      const skippedToday = todayLog?.skipped === true;
+      const completionsThisWeek = logs.filter((l) => l.completed).length;
 
       return {
         habit,
         completedToday,
-        completionsThisWeek: logs.length,
+        skippedToday,
+        completionsThisWeek,
         target: habit.frequencyPerWeek,
       };
     }),
@@ -243,9 +291,9 @@ export async function getHabitStreak(habitId: string): Promise<number> {
   });
 
   const logs = await prisma.habitLog.findMany({
-    where: { habitId, completed: true },
+    where: { habitId },
     orderBy: { date: "desc" },
-    take: 365, // cap at ~1 year
+    take: 365,
   });
 
   if (logs.length === 0) return 0;
@@ -254,6 +302,7 @@ export async function getHabitStreak(habitId: string): Promise<number> {
   let streak = 0;
 
   // Check consecutive 7-day windows going backwards
+  // Skipped days count toward the target (don't break streaks)
   for (let week = 0; week < 52; week++) {
     const windowEnd = new Date(
       today.getTime() - week * 7 * 24 * 60 * 60 * 1000,
@@ -262,11 +311,13 @@ export async function getHabitStreak(habitId: string): Promise<number> {
       windowEnd.getTime() - 6 * 24 * 60 * 60 * 1000,
     );
 
-    const count = logs.filter(
+    const windowLogs = logs.filter(
       (l) => l.date >= windowStart && l.date <= windowEnd,
-    ).length;
+    );
+    const completed = windowLogs.filter((l) => l.completed).length;
+    const skipped = windowLogs.filter((l) => l.skipped).length;
 
-    if (count >= habit.frequencyPerWeek) {
+    if (completed + skipped >= habit.frequencyPerWeek) {
       streak++;
     } else {
       break;
@@ -566,6 +617,46 @@ export async function formatHabitsOverview(chatId: string): Promise<string> {
   );
 
   return `Active habits:\n${lines.join("\n")}`;
+}
+
+// ---------------------------------------------------------------------------
+// On-demand stats
+// ---------------------------------------------------------------------------
+
+export async function formatAccountabilityStats(
+  chatId: string,
+): Promise<string> {
+  const stats = await getWeeklyStats(chatId);
+
+  const lines: string[] = ["This week's accountability:\n"];
+
+  // Commitments
+  if (stats.commitments.total > 0) {
+    lines.push(
+      `Commitments: ${stats.commitments.completed}/${stats.commitments.total} completed`,
+    );
+    if (stats.commitments.missed > 0) {
+      lines.push(
+        `  Missed: ${stats.commitments.missedItems.map((c) => c.text).join(", ")}`,
+      );
+    }
+  } else {
+    lines.push("No commitments this week.");
+  }
+
+  // Habits
+  if (stats.habits.length > 0) {
+    lines.push("");
+    lines.push("Habits:");
+    for (const h of stats.habits) {
+      const streakLabel = h.streak > 0 ? ` (${h.streak}w streak)` : "";
+      lines.push(`  - ${h.text}: ${h.actual}/${h.target}${streakLabel}`);
+    }
+  }
+
+  lines.push(`\nOverall score: ${stats.overallScore}%`);
+
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------

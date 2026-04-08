@@ -99,6 +99,8 @@ export async function handleHelp(ctx: Context): Promise<void> {
     '  "How are my habits going?" — view habit progress',
     '  "Cancel the report commitment" — drop a commitment',
     '  "Stop tracking exercise" — deactivate a habit',
+    '  "How did I do this week?" — accountability stats',
+    '  "Skip exercise today, rest day" — rest day',
     '  "Set morning briefing to 7am"',
     '  "Change evening check-in to 10pm"\n',
     "Briefing",

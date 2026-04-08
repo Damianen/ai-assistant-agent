@@ -11,6 +11,7 @@ import {
   cancelCommitment,
   createHabit,
   deactivateHabit,
+  skipHabitToday,
   getCheckInState,
   getCheckInItems,
   clearCheckInState,
@@ -18,6 +19,7 @@ import {
   updateAccountabilitySettings,
   formatCommitmentsOverview,
   formatHabitsOverview,
+  formatAccountabilityStats,
 } from "../services/accountability.js";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
@@ -83,9 +85,13 @@ export async function processText(ctx: Context, text: string): Promise<void> {
   let checkInContext: CheckInContext | undefined;
   const checkInState = getCheckInState(chatId);
   if (checkInState) {
-    const items = await getCheckInItems(chatId, checkInState);
-    if (items.length > 0) {
-      checkInContext = { items };
+    if (checkInState.mode === "post_meeting" && checkInState.eventSummary) {
+      checkInContext = { items: [], postMeetingEvent: checkInState.eventSummary };
+    } else {
+      const items = await getCheckInItems(chatId, checkInState);
+      if (items.length > 0) {
+        checkInContext = { items };
+      }
     }
   }
 
@@ -318,6 +324,49 @@ export async function processText(ctx: Context, text: string): Promise<void> {
       const result = await deactivateHabit(chatId, intent.habitText);
       if (result) {
         await reply(`Stopped tracking "${result.text}".`);
+      } else {
+        await reply(
+          `Couldn't find an active habit matching "${intent.habitText}".`,
+        );
+      }
+      break;
+    }
+
+    case "query_accountability_stats": {
+      const stats = await formatAccountabilityStats(chatId);
+      await reply(stats);
+      break;
+    }
+
+    case "post_meeting_action_items": {
+      const created: string[] = [];
+      for (const item of intent.items) {
+        const deadline = new Date(item.deadline);
+        await createCommitment(chatId, item.text, deadline);
+        created.push(item.text);
+      }
+      clearCheckInState(chatId);
+      if (created.length === 0) {
+        await reply("No action items — noted.");
+      } else {
+        await reply(
+          `Created ${created.length} commitment${created.length > 1 ? "s" : ""}:\n${created.map((t) => `- ${t}`).join("\n")}`,
+        );
+      }
+      break;
+    }
+
+    case "skip_habit": {
+      const result = await skipHabitToday(
+        chatId,
+        intent.habitText,
+        intent.reason,
+      );
+      if (result) {
+        const reasonLabel = intent.reason ? ` (${intent.reason})` : "";
+        await reply(
+          `Skipped "${result.text}" for today${reasonLabel}. Rest is part of the process.`,
+        );
       } else {
         await reply(
           `Couldn't find an active habit matching "${intent.habitText}".`,

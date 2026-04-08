@@ -120,6 +120,26 @@ const DeactivateHabitSchema = z.object({
   habitText: z.string(),
 });
 
+const QueryAccountabilityStatsSchema = z.object({
+  intent: z.literal("query_accountability_stats"),
+});
+
+const PostMeetingActionItemsSchema = z.object({
+  intent: z.literal("post_meeting_action_items"),
+  items: z.array(
+    z.object({
+      text: z.string(),
+      deadline: z.string(),
+    }),
+  ),
+});
+
+const SkipHabitSchema = z.object({
+  intent: z.literal("skip_habit"),
+  habitText: z.string(),
+  reason: z.string().optional(),
+});
+
 const DailyBriefSchema = z.object({
   intent: z.literal("daily_brief"),
 });
@@ -150,6 +170,9 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   QueryHabitsSchema,
   CancelCommitmentSchema,
   DeactivateHabitSchema,
+  QueryAccountabilityStatsSchema,
+  PostMeetingActionItemsSchema,
+  SkipHabitSchema,
   DailyBriefSchema,
   UnknownSchema,
 ]);
@@ -262,6 +285,18 @@ deactivate_habit:
 { "intent": "deactivate_habit", "habitText": "string (partial match ok)" }
 Use when the user wants to stop tracking a habit. Examples: "stop tracking exercise", "remove the meditation habit", "I don't want to track reading anymore".
 
+query_accountability_stats:
+{ "intent": "query_accountability_stats" }
+Use when the user wants a summary of their accountability performance. Examples: "how did I do this week?", "show my stats", "what's my completion rate?", "how am I doing with my goals?".
+
+post_meeting_action_items:
+{ "intent": "post_meeting_action_items", "items": [{ "text": "string", "deadline": "ISO8601 string" }] }
+Use ONLY when the user is responding to a post-meeting action items prompt. Extract each action item with a deadline. If no deadline mentioned, default to end of this week (Friday 17:00).
+
+skip_habit:
+{ "intent": "skip_habit", "habitText": "string (partial match ok)", "reason": "string (optional)" }
+Use when the user wants to skip a habit for today as a rest day or intentional skip. Examples: "skip exercise today, rest day", "taking a break from meditation today", "skip running, I'm sick".
+
 daily_brief:
 { "intent": "daily_brief" }
 
@@ -273,6 +308,7 @@ Return ONLY the JSON object.`;
 
 export interface CheckInContext {
   items: Array<{ id: string; text: string; type: "commitment" | "habit" }>;
+  postMeetingEvent?: string;
 }
 
 export async function parseIntent(
@@ -287,7 +323,9 @@ export async function parseIntent(
 
   let systemPrompt = buildSystemPrompt();
 
-  if (checkInContext && checkInContext.items.length > 0) {
+  if (checkInContext?.postMeetingEvent) {
+    systemPrompt += `\n\nIMPORTANT: The user is responding to a post-meeting action items prompt for "${checkInContext.postMeetingEvent}". Parse their response as a "post_meeting_action_items" intent. Extract each action item with a deadline. If no explicit deadline, default to this Friday at 17:00. If the user says "no", "nothing", or "none", return an empty items array.`;
+  } else if (checkInContext && checkInContext.items.length > 0) {
     const itemList = checkInContext.items
       .map((i) => `- ${i.text} (${i.type})`)
       .join("\n");
@@ -296,7 +334,7 @@ export async function parseIntent(
 
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 300,
+    max_tokens: 500,
     system: systemPrompt,
     messages,
   });

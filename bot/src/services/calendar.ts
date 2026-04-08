@@ -147,6 +147,7 @@ export interface CalendarEvent {
   id: string;
   summary: string;
   start: Date;
+  end: Date;
 }
 
 export async function getUpcomingEventsRaw(
@@ -170,13 +171,53 @@ export async function getUpcomingEventsRaw(
 
   const events: CalendarEvent[] = [];
   for (const e of res.data.items ?? []) {
-    const dateTime = e.start?.dateTime;
-    if (!dateTime || !e.id) continue; // skip all-day events
+    const startDt = e.start?.dateTime;
+    const endDt = e.end?.dateTime;
+    if (!startDt || !endDt || !e.id) continue; // skip all-day events
     events.push({
       id: e.id,
       summary: e.summary ?? "(no title)",
-      start: new Date(dateTime),
+      start: new Date(startDt),
+      end: new Date(endDt),
     });
+  }
+  return events;
+}
+
+export async function getRecentlyEndedEvents(
+  minutesAgo: number,
+): Promise<CalendarEvent[]> {
+  const auth = await getAuthedClient();
+  if (!auth) return [];
+
+  const calendar = google.calendar({ version: "v3", auth });
+  const now = new Date();
+  const since = new Date(now.getTime() - minutesAgo * 60 * 1000);
+
+  const res = await calendar.events.list({
+    calendarId: "primary",
+    timeMin: since.toISOString(),
+    timeMax: now.toISOString(),
+    singleEvents: true,
+    orderBy: "startTime",
+    maxResults: 10,
+  });
+
+  const events: CalendarEvent[] = [];
+  for (const e of res.data.items ?? []) {
+    const startDt = e.start?.dateTime;
+    const endDt = e.end?.dateTime;
+    if (!startDt || !endDt || !e.id) continue;
+    const end = new Date(endDt);
+    // Only include events that have actually ended
+    if (end <= now) {
+      events.push({
+        id: e.id,
+        summary: e.summary ?? "(no title)",
+        start: new Date(startDt),
+        end,
+      });
+    }
   }
   return events;
 }

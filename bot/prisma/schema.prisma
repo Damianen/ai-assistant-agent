@@ -128,11 +128,13 @@ model Habit {
 }
 
 model HabitLog {
-  id        String   @id @default(cuid())
-  habitId   String
-  date      DateTime
-  completed Boolean
-  habit     Habit    @relation(fields: [habitId], references: [id])
+  id         String   @id @default(cuid())
+  habitId    String
+  date       DateTime
+  completed  Boolean
+  skipped    Boolean  @default(false)
+  skipReason String?
+  habit      Habit    @relation(fields: [habitId], references: [id])
 
   @@unique([habitId, date])
   @@index([habitId, date])

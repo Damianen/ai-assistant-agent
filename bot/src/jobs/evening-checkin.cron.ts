@@ -56,11 +56,22 @@ export const eveningCheckInCron = cron.schedule(
         lines.push("");
       }
 
-      if (habitStatus.length > 0) {
+      const activeHabits = habitStatus.filter(
+        (h) => !h.skippedToday && !h.completedToday,
+      );
+      const skippedHabits = habitStatus.filter((h) => h.skippedToday);
+
+      if (activeHabits.length > 0) {
         lines.push("Habits:");
-        for (const h of habitStatus) {
+        for (const h of activeHabits) {
           const progress = `${h.completionsThisWeek}/${h.target} this week`;
           lines.push(`  - ${h.habit.text} (${progress})`);
+        }
+      }
+
+      if (skippedHabits.length > 0) {
+        for (const h of skippedHabits) {
+          lines.push(`  - ${h.habit.text} (skipped today)`);
         }
       }
 
@@ -68,9 +79,10 @@ export const eveningCheckInCron = cron.schedule(
 
       await bot.api.sendMessage(chatId, lines.join("\n"));
 
+      // Only include non-skipped, non-completed habits in check-in state
       const itemIds = [
         ...commitments.map((c) => c.id),
-        ...habitStatus.map((h) => h.habit.id),
+        ...activeHabits.map((h) => h.habit.id),
       ];
       setCheckInState(chatId, "evening_checkin", itemIds);
 

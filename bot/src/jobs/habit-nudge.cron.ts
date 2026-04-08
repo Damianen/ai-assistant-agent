@@ -39,7 +39,7 @@ export const habitNudgeCron = cron.schedule(
       const daysRemaining = Math.max(1, 7 - dayOfWeek);
 
       const behind = habitStatus.filter((h) => {
-        if (h.completedToday) return false;
+        if (h.completedToday || h.skippedToday) return false;
         const sessionsRemaining = h.target - h.completionsThisWeek;
         return sessionsRemaining > 0 && sessionsRemaining >= daysRemaining;
       });
