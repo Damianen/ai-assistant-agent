@@ -1,9 +1,20 @@
 import type { Context } from "grammy";
-import { parseIntent, type ChatHistoryMessage } from "../services/llm.js";
+import { parseIntent, type ChatHistoryMessage, type CheckInContext } from "../services/llm.js";
 import { createReminder } from "../services/reminders.js";
 import { getDailyBrief } from "../services/briefing.js";
 import { createCalendarEvent, listUpcomingEvents, getAuthUrl } from "../services/calendar.js";
 import { processWithBrain, enrichContextForMessage } from "../services/brain.js";
+import {
+  createCommitment,
+  completeCommitment,
+  rescheduleCommitment,
+  createHabit,
+  getCheckInState,
+  getCheckInItems,
+  clearCheckInState,
+  processCheckInResponse,
+  updateAccountabilitySettings,
+} from "../services/accountability.js";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
 
@@ -64,7 +75,17 @@ export async function processText(ctx: Context, text: string): Promise<void> {
     }).catch(() => {}); // Don't fail the handler if storage fails
   };
 
-  const intent = await parseIntent(text, history);
+  // Check if we're in an active check-in conversation
+  let checkInContext: CheckInContext | undefined;
+  const checkInState = getCheckInState(chatId);
+  if (checkInState) {
+    const items = await getCheckInItems(chatId, checkInState);
+    if (items.length > 0) {
+      checkInContext = { items };
+    }
+  }
+
+  const intent = await parseIntent(text, history, checkInContext);
 
   switch (intent.intent) {
     case "create_reminder": {
@@ -186,6 +207,97 @@ export async function processText(ctx: Context, text: string): Promise<void> {
         await reply(events);
       }
       enrichContextForMessage(text).catch(() => {});
+      break;
+    }
+
+    case "set_calendar_reminder": {
+      await prisma.userSettings.upsert({
+        where: { chatId },
+        create: { chatId, calendarReminderMinutes: intent.minutes },
+        update: { calendarReminderMinutes: intent.minutes },
+      });
+      const msg =
+        intent.minutes === 0
+          ? "Calendar notifications disabled"
+          : `Calendar notifications set to ${intent.minutes} minutes before`;
+      await reply(msg);
+      break;
+    }
+
+    case "create_commitment": {
+      const deadline = new Date(intent.deadline);
+      await createCommitment(chatId, intent.text, deadline);
+      await reply(
+        `Locked in. I'll hold you to "${intent.text}" by ${formatDate(deadline)}.`,
+      );
+      enrichContextForMessage(text).catch(() => {});
+      break;
+    }
+
+    case "create_habit": {
+      await createHabit(chatId, intent.text, intent.frequencyPerWeek);
+      const freq =
+        intent.frequencyPerWeek === 7
+          ? "daily"
+          : `${intent.frequencyPerWeek}x/week`;
+      await reply(`Tracking "${intent.text}" — ${freq}. I'll check in on this.`);
+      enrichContextForMessage(text).catch(() => {});
+      break;
+    }
+
+    case "complete_commitment": {
+      const commitment = await completeCommitment(chatId, intent.commitmentText);
+      if (commitment) {
+        await reply(`Nice — "${commitment.text}" marked as done.`);
+      } else {
+        await reply(
+          `Couldn't find a pending commitment matching "${intent.commitmentText}".`,
+        );
+      }
+      break;
+    }
+
+    case "reschedule_commitment": {
+      const match = await prisma.commitment.findFirst({
+        where: {
+          chatId,
+          status: "pending",
+          text: { contains: intent.commitmentText, mode: "insensitive" },
+        },
+      });
+      if (match) {
+        const newDeadline = new Date(intent.newDeadline);
+        await rescheduleCommitment(match.id, newDeadline);
+        await reply(
+          `Rescheduled "${match.text}" to ${formatDate(newDeadline)}. Don't let it slip again.`,
+        );
+      } else {
+        await reply(
+          `Couldn't find a pending commitment matching "${intent.commitmentText}".`,
+        );
+      }
+      break;
+    }
+
+    case "accountability_checkin": {
+      const results = await processCheckInResponse(chatId, intent.items);
+      clearCheckInState(chatId);
+      await reply(results.summary);
+      break;
+    }
+
+    case "update_accountability_settings": {
+      await updateAccountabilitySettings(
+        chatId,
+        intent.morningHour,
+        intent.eveningHour,
+      );
+      const parts: string[] = [];
+      if (intent.morningHour !== undefined)
+        parts.push(`morning briefing → ${intent.morningHour}:00`);
+      if (intent.eveningHour !== undefined)
+        parts.push(`evening check-in → ${intent.eveningHour}:00`);
+      await reply(`Updated: ${parts.join(", ")}`);
       break;
     }
 

@@ -85,3 +85,54 @@ model ChatMessage {
 
   @@index([chatId, createdAt])
 }
+
+model UserSettings {
+  id                      String @id @default(cuid())
+  chatId                  String @unique
+  calendarReminderMinutes Int    @default(5)
+  morningBriefHour        Int    @default(8)
+  eveningCheckInHour      Int    @default(21)
+}
+
+enum CommitmentStatus {
+  pending
+  completed
+  missed
+  rescheduled
+}
+
+model Commitment {
+  id        String           @id @default(cuid())
+  chatId    String
+  text      String
+  deadline  DateTime
+  status    CommitmentStatus @default(pending)
+  bullJobId String?
+  createdAt DateTime         @default(now())
+
+  @@index([chatId, status])
+  @@index([chatId, deadline])
+}
+
+model Habit {
+  id               String     @id @default(cuid())
+  chatId           String
+  text             String
+  frequencyPerWeek Int
+  active           Boolean    @default(true)
+  logs             HabitLog[]
+  createdAt        DateTime   @default(now())
+
+  @@index([chatId, active])
+}
+
+model HabitLog {
+  id        String   @id @default(cuid())
+  habitId   String
+  date      DateTime
+  completed Boolean
+  habit     Habit    @relation(fields: [habitId], references: [id])
+
+  @@unique([habitId, date])
+  @@index([habitId, date])
+}

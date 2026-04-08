@@ -6,6 +6,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY prisma/ ./prisma/
+COPY prisma.config.ts ./
 RUN npx prisma generate
 
 COPY src/ ./src/
@@ -23,6 +24,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./
 
 RUN npx prisma generate
 
@@ -32,4 +34,4 @@ USER appuser
 
 EXPOSE 3001
 
-CMD ["node", "dist/index.js"]
+CMD sh -c "npx prisma db push --skip-generate && node dist/index.js"

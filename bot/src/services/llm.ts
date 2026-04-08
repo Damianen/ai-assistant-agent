@@ -58,6 +58,50 @@ const QueryCalendarSchema = z.object({
   days: z.number(),
 });
 
+const SetCalendarReminderSchema = z.object({
+  intent: z.literal("set_calendar_reminder"),
+  minutes: z.number(),
+});
+
+const CreateCommitmentSchema = z.object({
+  intent: z.literal("create_commitment"),
+  text: z.string(),
+  deadline: z.string(),
+});
+
+const CreateHabitSchema = z.object({
+  intent: z.literal("create_habit"),
+  text: z.string(),
+  frequencyPerWeek: z.number(),
+});
+
+const CompleteCommitmentSchema = z.object({
+  intent: z.literal("complete_commitment"),
+  commitmentText: z.string(),
+});
+
+const RescheduleCommitmentSchema = z.object({
+  intent: z.literal("reschedule_commitment"),
+  commitmentText: z.string(),
+  newDeadline: z.string(),
+});
+
+const AccountabilityCheckInSchema = z.object({
+  intent: z.literal("accountability_checkin"),
+  items: z.array(
+    z.object({
+      text: z.string(),
+      completed: z.boolean(),
+    }),
+  ),
+});
+
+const UpdateAccountabilitySettingsSchema = z.object({
+  intent: z.literal("update_accountability_settings"),
+  morningHour: z.number().optional(),
+  eveningHour: z.number().optional(),
+});
+
 const DailyBriefSchema = z.object({
   intent: z.literal("daily_brief"),
 });
@@ -77,6 +121,13 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   DeleteMemorySchema,
   CreateCalendarEventSchema,
   QueryCalendarSchema,
+  SetCalendarReminderSchema,
+  CreateCommitmentSchema,
+  CreateHabitSchema,
+  CompleteCommitmentSchema,
+  RescheduleCommitmentSchema,
+  AccountabilityCheckInSchema,
+  UpdateAccountabilitySettingsSchema,
   DailyBriefSchema,
   UnknownSchema,
 ]);
@@ -144,6 +195,35 @@ query_calendar:
 { "intent": "query_calendar", "days": number }
 Use this when the user wants to check, view, or list their calendar events. "days" is how far ahead to look (1 = today, 7 = this week, 30 = this month).
 
+set_calendar_reminder:
+{ "intent": "set_calendar_reminder", "minutes": number }
+Use this when the user wants to change how many minutes before a calendar event they get notified. Use 0 to disable notifications. Examples: "set calendar reminders to 10 minutes", "notify me 30 minutes before events", "turn off calendar notifications".
+
+create_commitment:
+{ "intent": "create_commitment", "text": "string (what they commit to)", "deadline": "ISO8601 string" }
+Use when the user makes a commitment, promise, or pledge with a deadline. Examples: "I'll finish the report by Friday", "I commit to applying for 3 jobs this week", "I'm going to clean the house by Sunday".
+IMPORTANT: This is different from create_reminder. Reminders are notifications ("remind me to..."). Commitments are personal accountability ("I'll do X by Y", "I promise to...", "I commit to...").
+
+create_habit:
+{ "intent": "create_habit", "text": "string (the habit)", "frequencyPerWeek": number }
+Use when the user wants to build a recurring habit. Examples: "I want to exercise 3 times a week" (3), "I should meditate daily" (7), "I want to read twice a week" (2).
+
+complete_commitment:
+{ "intent": "complete_commitment", "commitmentText": "string (partial match ok)" }
+Use when the user proactively says they finished a commitment. Examples: "I finished the report", "done with the job applications".
+
+reschedule_commitment:
+{ "intent": "reschedule_commitment", "commitmentText": "string (partial match ok)", "newDeadline": "ISO8601 string" }
+Use when the user wants to push a commitment to a new deadline. Examples: "can I push the report to Monday?", "reschedule the cleaning to next week".
+
+accountability_checkin:
+{ "intent": "accountability_checkin", "items": [{ "text": "string", "completed": boolean }] }
+Use ONLY when the user is responding to an accountability check-in message from the bot. Parse which items they completed vs didn't.
+
+update_accountability_settings:
+{ "intent": "update_accountability_settings", "morningHour": number (0-23, optional), "eveningHour": number (0-23, optional) }
+Use when the user wants to change their morning briefing or evening check-in time. Examples: "set morning briefing to 7am", "change evening check-in to 10pm".
+
 daily_brief:
 { "intent": "daily_brief" }
 
@@ -153,19 +233,33 @@ unknown:
 Return ONLY the JSON object.`;
 }
 
+export interface CheckInContext {
+  items: Array<{ id: string; text: string; type: "commitment" | "habit" }>;
+}
+
 export async function parseIntent(
   message: string,
   history: ChatHistoryMessage[] = [],
+  checkInContext?: CheckInContext,
 ): Promise<ParsedIntent> {
   const messages: ChatHistoryMessage[] = [
     ...history,
     { role: "user", content: message },
   ];
 
+  let systemPrompt = buildSystemPrompt();
+
+  if (checkInContext && checkInContext.items.length > 0) {
+    const itemList = checkInContext.items
+      .map((i) => `- ${i.text} (${i.type})`)
+      .join("\n");
+    systemPrompt += `\n\nIMPORTANT: The user is currently responding to an accountability check-in. The following items were asked about:\n${itemList}\n\nParse their response as an "accountability_checkin" intent, mapping each item to completed: true/false based on what the user says. If they only mention some items, mark unmentioned ones as completed: false.`;
+  }
+
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 300,
-    system: buildSystemPrompt(),
+    system: systemPrompt,
     messages,
   });
 

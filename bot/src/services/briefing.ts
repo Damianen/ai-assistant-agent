@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db/prisma.js";
 import { listUpcomingEvents } from "./calendar.js";
+import { getTodaysDueCommitments, getTodaysHabitStatus } from "./accountability.js";
 
 const anthropic = new Anthropic();
 const TIMEZONE = "Europe/Amsterdam";
@@ -20,22 +21,25 @@ export async function getDailyBrief(chatId: string): Promise<string> {
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-  const [reminders, listItems, calendarEvents] = await Promise.all([
-    prisma.reminder.findMany({
-      where: {
-        chatId,
-        fireAt: { gt: now, lt: tomorrow },
-        fired: false,
-        cancelled: false,
-      },
-      orderBy: { fireAt: "asc" },
-    }),
-    prisma.listItem.findMany({
-      where: { chatId, done: false },
-      orderBy: { createdAt: "asc" },
-    }),
-    listUpcomingEvents(1),
-  ]);
+  const [reminders, listItems, calendarEvents, dueCommitments, habitStatus] =
+    await Promise.all([
+      prisma.reminder.findMany({
+        where: {
+          chatId,
+          fireAt: { gt: now, lt: tomorrow },
+          fired: false,
+          cancelled: false,
+        },
+        orderBy: { fireAt: "asc" },
+      }),
+      prisma.listItem.findMany({
+        where: { chatId, done: false },
+        orderBy: { createdAt: "asc" },
+      }),
+      listUpcomingEvents(1),
+      getTodaysDueCommitments(chatId),
+      getTodaysHabitStatus(chatId),
+    ]);
 
   const reminderText =
     reminders.length > 0
@@ -56,6 +60,23 @@ export async function getDailyBrief(chatId: string): Promise<string> {
           .join("\n")
       : "No active lists.";
 
+  const commitmentText =
+    dueCommitments.length > 0
+      ? dueCommitments
+          .map((c) => `- ${c.text} (due ${formatDate(c.deadline)})`)
+          .join("\n")
+      : "No commitments due today.";
+
+  const habitText =
+    habitStatus.length > 0
+      ? habitStatus
+          .map(
+            (h) =>
+              `- ${h.habit.text}: ${h.completionsThisWeek}/${h.target} this week${h.completedToday ? " (done today)" : ""}`,
+          )
+          .join("\n")
+      : "No active habits.";
+
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 500,
@@ -69,7 +90,11 @@ Upcoming reminders:\n${reminderText}
 
 Calendar events today:\n${calendarEvents}
 
-Active lists:\n${listsText}`,
+Active lists:\n${listsText}
+
+Commitments due today:\n${commitmentText}
+
+Habits to work on:\n${habitText}`,
       },
     ],
   });

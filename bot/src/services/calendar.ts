@@ -143,6 +143,44 @@ export async function listUpcomingEvents(days: number): Promise<string> {
     .join("\n");
 }
 
+export interface CalendarEvent {
+  id: string;
+  summary: string;
+  start: Date;
+}
+
+export async function getUpcomingEventsRaw(
+  minutes: number,
+): Promise<CalendarEvent[]> {
+  const auth = await getAuthedClient();
+  if (!auth) return [];
+
+  const calendar = google.calendar({ version: "v3", auth });
+  const now = new Date();
+  const until = new Date(now.getTime() + minutes * 60 * 1000);
+
+  const res = await calendar.events.list({
+    calendarId: "primary",
+    timeMin: now.toISOString(),
+    timeMax: until.toISOString(),
+    singleEvents: true,
+    orderBy: "startTime",
+    maxResults: 20,
+  });
+
+  const events: CalendarEvent[] = [];
+  for (const e of res.data.items ?? []) {
+    const dateTime = e.start?.dateTime;
+    if (!dateTime || !e.id) continue; // skip all-day events
+    events.push({
+      id: e.id,
+      summary: e.summary ?? "(no title)",
+      start: new Date(dateTime),
+    });
+  }
+  return events;
+}
+
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
   const auth = await getAuthedClient();
   if (!auth) throw new Error("CALENDAR_NOT_CONNECTED");
