@@ -1,5 +1,5 @@
 import type { Context } from "grammy";
-import { parseIntent, type ChatHistoryMessage, type CheckInContext } from "../services/llm.js";
+import { parseIntent, type ChatHistoryMessage, type CheckInContext, type GoalPlanningContext } from "../services/llm.js";
 import { createReminder } from "../services/reminders.js";
 import { getDailyBrief } from "../services/briefing.js";
 import { createCalendarEvent, listUpcomingEvents, getAuthUrl } from "../services/calendar.js";
@@ -21,6 +21,16 @@ import {
   formatHabitsOverview,
   formatAccountabilityStats,
 } from "../services/accountability.js";
+import {
+  createGoalWithPlan,
+  approveGoalPlan,
+  reviseGoalPlan,
+  getGoalPlanningState,
+  clearGoalPlanningState,
+  formatGoalsOverview,
+  completeMilestone,
+  updateGoalStatus,
+} from "../services/goals.js";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
 
@@ -95,7 +105,16 @@ export async function processText(ctx: Context, text: string): Promise<void> {
     }
   }
 
-  const intent = await parseIntent(text, history, checkInContext);
+  // Check for goal planning state (only if not in a check-in)
+  let goalPlanningContext: GoalPlanningContext | undefined;
+  if (!checkInContext) {
+    const goalState = getGoalPlanningState(chatId);
+    if (goalState) {
+      goalPlanningContext = { goalTitle: goalState.goalTitle };
+    }
+  }
+
+  const intent = await parseIntent(text, history, checkInContext, goalPlanningContext);
 
   switch (intent.intent) {
     case "create_reminder": {
@@ -393,6 +412,88 @@ export async function processText(ctx: Context, text: string): Promise<void> {
     case "daily_brief": {
       const brief = await getDailyBrief(chatId);
       await reply(brief);
+      break;
+    }
+
+    case "create_goal": {
+      await ctx.replyWithChatAction("typing");
+      const { planSummary } = await createGoalWithPlan(
+        chatId,
+        intent.title,
+        intent.description,
+        text,
+      );
+      await reply(planSummary);
+      enrichContextForMessage(text).catch(() => {});
+      break;
+    }
+
+    case "approve_goal_plan": {
+      await ctx.replyWithChatAction("typing");
+      const goalState = getGoalPlanningState(chatId);
+      if (!goalState) {
+        await reply("No pending goal plan to approve.");
+        break;
+      }
+      const { summary } = await approveGoalPlan(goalState.goalId, chatId);
+      clearGoalPlanningState(chatId);
+      await reply(summary);
+      break;
+    }
+
+    case "revise_goal_plan": {
+      await ctx.replyWithChatAction("typing");
+      const goalState = getGoalPlanningState(chatId);
+      if (!goalState) {
+        await reply("No pending goal plan to revise.");
+        break;
+      }
+      const { planSummary: revised } = await reviseGoalPlan(
+        goalState.goalId,
+        intent.feedback,
+      );
+      await reply(revised);
+      break;
+    }
+
+    case "query_goals": {
+      const goalsOverview = await formatGoalsOverview(chatId);
+      await reply(goalsOverview);
+      break;
+    }
+
+    case "update_goal": {
+      const goalResult = await updateGoalStatus(
+        chatId,
+        intent.goalTitle,
+        intent.action,
+      );
+      if (goalResult) {
+        await reply(
+          `Goal "${goalResult.title}" marked as ${intent.action}.`,
+        );
+      } else {
+        await reply(
+          `Couldn't find an active goal matching "${intent.goalTitle}".`,
+        );
+      }
+      break;
+    }
+
+    case "complete_milestone": {
+      const milestoneResult = await completeMilestone(
+        chatId,
+        intent.milestoneText,
+      );
+      if (milestoneResult) {
+        await reply(
+          `Milestone "${milestoneResult.text}" completed for "${milestoneResult.goalTitle}".`,
+        );
+      } else {
+        await reply(
+          `Couldn't find a pending milestone matching "${intent.milestoneText}".`,
+        );
+      }
       break;
     }
 

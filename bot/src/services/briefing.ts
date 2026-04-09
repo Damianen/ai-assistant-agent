@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db/prisma.js";
 import { listUpcomingEvents } from "./calendar.js";
 import { getTodaysDueCommitments, getTodaysHabitStatus } from "./accountability.js";
+import { getActiveGoals } from "./goals.js";
 
 const anthropic = new Anthropic();
 const TIMEZONE = "Europe/Amsterdam";
@@ -21,7 +22,7 @@ export async function getDailyBrief(chatId: string): Promise<string> {
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-  const [reminders, listItems, calendarEvents, dueCommitments, habitStatus] =
+  const [reminders, listItems, calendarEvents, dueCommitments, habitStatus, activeGoals] =
     await Promise.all([
       prisma.reminder.findMany({
         where: {
@@ -39,6 +40,7 @@ export async function getDailyBrief(chatId: string): Promise<string> {
       listUpcomingEvents(1),
       getTodaysDueCommitments(chatId),
       getTodaysHabitStatus(chatId),
+      getActiveGoals(chatId),
     ]);
 
   const reminderText =
@@ -77,6 +79,21 @@ export async function getDailyBrief(chatId: string): Promise<string> {
           .join("\n")
       : "No active habits.";
 
+  const goalText =
+    activeGoals.length > 0
+      ? activeGoals
+          .map((g) => {
+            const done = g.milestones.filter((m) => m.status === "completed").length;
+            const total = g.milestones.length;
+            const next = g.milestones.find((m) => m.status === "pending");
+            const nextLabel = next
+              ? ` — Next: ${next.text}${next.targetDate ? ` (${next.targetDate.toLocaleDateString("en-US", { timeZone: TIMEZONE, month: "short", day: "numeric" })})` : ""}`
+              : "";
+            return `- ${g.title}: ${done}/${total} milestones${nextLabel}`;
+          })
+          .join("\n")
+      : "";
+
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 500,
@@ -94,7 +111,7 @@ Active lists:\n${listsText}
 
 Commitments due today:\n${commitmentText}
 
-Habits to work on:\n${habitText}`,
+Habits to work on:\n${habitText}${goalText ? `\n\nActive goals:\n${goalText}` : ""}`,
       },
     ],
   });

@@ -144,6 +144,36 @@ const DailyBriefSchema = z.object({
   intent: z.literal("daily_brief"),
 });
 
+const CreateGoalSchema = z.object({
+  intent: z.literal("create_goal"),
+  title: z.string(),
+  description: z.string().optional(),
+});
+
+const QueryGoalsSchema = z.object({
+  intent: z.literal("query_goals"),
+});
+
+const UpdateGoalSchema = z.object({
+  intent: z.literal("update_goal"),
+  goalTitle: z.string(),
+  action: z.enum(["complete", "abandon"]),
+});
+
+const CompleteMilestoneSchema = z.object({
+  intent: z.literal("complete_milestone"),
+  milestoneText: z.string(),
+});
+
+const ApproveGoalPlanSchema = z.object({
+  intent: z.literal("approve_goal_plan"),
+});
+
+const ReviseGoalPlanSchema = z.object({
+  intent: z.literal("revise_goal_plan"),
+  feedback: z.string(),
+});
+
 const UnknownSchema = z.object({
   intent: z.literal("unknown"),
   reply: z.string(),
@@ -174,6 +204,12 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   PostMeetingActionItemsSchema,
   SkipHabitSchema,
   DailyBriefSchema,
+  CreateGoalSchema,
+  QueryGoalsSchema,
+  UpdateGoalSchema,
+  CompleteMilestoneSchema,
+  ApproveGoalPlanSchema,
+  ReviseGoalPlanSchema,
   UnknownSchema,
 ]);
 
@@ -300,6 +336,23 @@ Use when the user wants to skip a habit for today as a rest day or intentional s
 daily_brief:
 { "intent": "daily_brief" }
 
+create_goal:
+{ "intent": "create_goal", "title": "string (concise goal name)", "description": "string (optional extra context)" }
+Use when the user sets a new goal or objective they want to work toward. Examples: "I want to quit smoking", "my goal is to launch a SaaS by December", "I want to run a marathon", "help me build a business", "I want to lose 10kg".
+This is different from create_habit (a single recurring behavior) or create_commitment (a single task with deadline). Goals are bigger objectives that may involve multiple habits, commitments, and milestones.
+
+query_goals:
+{ "intent": "query_goals" }
+Use when the user asks about their goals or goal progress. Examples: "how are my goals going?", "show my goals", "what goals do I have?".
+
+update_goal:
+{ "intent": "update_goal", "goalTitle": "string (partial match ok)", "action": "complete" | "abandon" }
+Use when the user wants to mark a goal as achieved or give up on it. Examples: "I achieved my quit smoking goal", "abandon the business goal", "I'm done with the marathon goal".
+
+complete_milestone:
+{ "intent": "complete_milestone", "milestoneText": "string (partial match ok)" }
+Use when the user says they've reached a milestone for a goal. Examples: "I've hit 1 week without smoking", "finished the MVP milestone", "completed the first phase".
+
 unknown:
 { "intent": "unknown", "reply": "string (friendly response to the user)" }
 
@@ -311,10 +364,15 @@ export interface CheckInContext {
   postMeetingEvent?: string;
 }
 
+export interface GoalPlanningContext {
+  goalTitle: string;
+}
+
 export async function parseIntent(
   message: string,
   history: ChatHistoryMessage[] = [],
   checkInContext?: CheckInContext,
+  goalPlanningContext?: GoalPlanningContext,
 ): Promise<ParsedIntent> {
   const messages: ChatHistoryMessage[] = [
     ...history,
@@ -330,6 +388,8 @@ export async function parseIntent(
       .map((i) => `- ${i.text} (${i.type})`)
       .join("\n");
     systemPrompt += `\n\nIMPORTANT: The user is currently responding to an accountability check-in. The following items were asked about:\n${itemList}\n\nParse their response as an "accountability_checkin" intent, mapping each item to completed: true/false based on what the user says. If they only mention some items, mark unmentioned ones as completed: false.`;
+  } else if (goalPlanningContext) {
+    systemPrompt += `\n\nIMPORTANT: The user is reviewing a proposed goal plan for "${goalPlanningContext.goalTitle}". If they approve it ("looks good", "yes", "go ahead", "create it", "perfect", "do it"), return { "intent": "approve_goal_plan" }. If they want changes ("change X", "remove Y", "add Z", "fewer milestones", etc.), return { "intent": "revise_goal_plan", "feedback": "their requested changes" }.`;
   }
 
   const response = await anthropic.messages.create({

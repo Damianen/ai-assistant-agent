@@ -102,6 +102,19 @@ enum CommitmentStatus {
   cancelled
 }
 
+enum GoalStatus {
+  planning
+  active
+  paused
+  completed
+  abandoned
+}
+
+enum MilestoneStatus {
+  pending
+  completed
+}
+
 model Commitment {
   id        String           @id @default(cuid())
   chatId    String
@@ -109,6 +122,8 @@ model Commitment {
   deadline  DateTime
   status    CommitmentStatus @default(pending)
   bullJobId String?
+  goalId    String?
+  goal      Goal?            @relation(fields: [goalId], references: [id])
   createdAt DateTime         @default(now())
 
   @@index([chatId, status])
@@ -121,6 +136,8 @@ model Habit {
   text             String
   frequencyPerWeek Int
   active           Boolean    @default(true)
+  goalId           String?
+  goal             Goal?      @relation(fields: [goalId], references: [id])
   logs             HabitLog[]
   createdAt        DateTime   @default(now())
 
@@ -138,4 +155,33 @@ model HabitLog {
 
   @@unique([habitId, date])
   @@index([habitId, date])
+}
+
+model Goal {
+  id          String       @id @default(cuid())
+  chatId      String
+  title       String
+  description String?
+  status      GoalStatus   @default(planning)
+  plan        Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  milestones  Milestone[]
+  habits      Habit[]
+  commitments Commitment[]
+
+  @@index([chatId, status])
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  goalId      String
+  goal        Goal            @relation(fields: [goalId], references: [id])
+  text        String
+  targetDate  DateTime?
+  status      MilestoneStatus @default(pending)
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@index([goalId, status])
 }
