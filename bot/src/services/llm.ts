@@ -437,6 +437,25 @@ export async function parseIntent(
 
   try {
     const parsed = JSON.parse(raw);
+
+    // Normalize old flat calendar event format into events array
+    if (parsed.intent === "create_calendar_event" && !parsed.events && parsed.summary) {
+      parsed.events = [{
+        summary: parsed.summary,
+        start: parsed.start,
+        end: parsed.end,
+        description: parsed.description,
+        recurrence: parsed.recurrence,
+        color: parsed.color ?? null,
+      }];
+      delete parsed.summary;
+      delete parsed.start;
+      delete parsed.end;
+      delete parsed.description;
+      delete parsed.recurrence;
+      delete parsed.color;
+    }
+
     const result = ParsedIntentSchema.safeParse(parsed);
     if (result.success) {
       return result.data;
