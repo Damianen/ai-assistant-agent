@@ -14,6 +14,7 @@ import { habitNudgeCron } from "./jobs/habit-nudge.cron.js";
 import { postMeetingCron } from "./jobs/post-meeting.cron.js";
 import { handleMessage } from "./handlers/message.js";
 import { handleVoice } from "./handlers/voice.js";
+import { handlePhoto } from "./handlers/photo.js";
 import { handleStatus, handleHelp, handleReset } from "./handlers/commands.js";
 import { seedSchema } from "./db/schema-registry.js";
 import { runQuery, closeGraph } from "./db/graph.js";
@@ -101,6 +102,7 @@ bot.command("reset", handleReset);
 // ---------------------------------------------------------------------------
 bot.on("message:text", handleMessage);
 bot.on("message:voice", handleVoice);
+bot.on("message:photo", handlePhoto);
 
 // ---------------------------------------------------------------------------
 // Error handler
