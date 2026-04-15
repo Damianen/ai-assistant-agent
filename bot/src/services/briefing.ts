@@ -3,22 +3,23 @@ import { prisma } from "../db/prisma.js";
 import { listUpcomingEvents } from "./calendar.js";
 import { getTodaysDueCommitments, getTodaysHabitStatus } from "./accountability.js";
 import { getActiveGoals } from "./goals.js";
+import { getTimezone } from "../lib/settings.js";
 
 const anthropic = new Anthropic();
-const TIMEZONE = "Europe/Amsterdam";
-
-function formatDate(date: Date): string {
-  return date.toLocaleString("en-US", {
-    timeZone: TIMEZONE,
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export async function getDailyBrief(chatId: string): Promise<string> {
+  const tz = await getTimezone(chatId);
+
+  function formatDate(date: Date): string {
+    return date.toLocaleString("en-US", {
+      timeZone: tz,
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
@@ -87,7 +88,7 @@ export async function getDailyBrief(chatId: string): Promise<string> {
             const total = g.milestones.length;
             const next = g.milestones.find((m) => m.status === "pending");
             const nextLabel = next
-              ? ` — Next: ${next.text}${next.targetDate ? ` (${next.targetDate.toLocaleDateString("en-US", { timeZone: TIMEZONE, month: "short", day: "numeric" })})` : ""}`
+              ? ` — Next: ${next.text}${next.targetDate ? ` (${next.targetDate.toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" })})` : ""}`
               : "";
             return `- ${g.title}: ${done}/${total} milestones${nextLabel}`;
           })

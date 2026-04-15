@@ -3,9 +3,9 @@ import { prisma } from "../db/prisma.js";
 import { createCommitment } from "./accountability.js";
 import { createCalendarEvent } from "./calendar.js";
 import { logger } from "../lib/logger.js";
+import { getTimezone } from "../lib/settings.js";
 
 const anthropic = new Anthropic();
-const TIMEZONE = "Europe/Amsterdam";
 
 // ---------------------------------------------------------------------------
 // Goal plan types
@@ -87,10 +87,10 @@ export function clearGoalPlanningState(chatId: string): void {
 // Plan generation
 // ---------------------------------------------------------------------------
 
-function buildPlanPrompt(title: string, description?: string): string {
+function buildPlanPrompt(title: string, tz: string, description?: string): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
-    timeZone: TIMEZONE,
+    timeZone: tz,
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -100,7 +100,7 @@ function buildPlanPrompt(title: string, description?: string): string {
   return `You are a goal planning assistant. Create an actionable plan to help the user achieve their goal.
 
 Today: ${dateStr}
-Timezone: ${TIMEZONE}
+Timezone: ${tz}
 
 Goal: ${title}${description ? `\n\nUser's full message (may contain detailed plans, context, or documents):\n${description}` : ""}
 
@@ -130,6 +130,7 @@ Return ONLY valid JSON with no explanation, no markdown, no backticks. Use this 
 
 async function generateGoalPlan(
   title: string,
+  tz: string,
   description?: string,
 ): Promise<GoalPlan> {
   // Use more tokens when the user provided detailed context
@@ -138,7 +139,7 @@ async function generateGoalPlan(
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: maxTokens,
-    messages: [{ role: "user", content: buildPlanPrompt(title, description) }],
+    messages: [{ role: "user", content: buildPlanPrompt(title, tz, description) }],
   });
 
   const block = response.content[0];
@@ -154,14 +155,14 @@ async function generateGoalPlan(
   return JSON.parse(raw) as GoalPlan;
 }
 
-function formatPlanForUser(title: string, plan: GoalPlan): string {
+function formatPlanForUser(title: string, plan: GoalPlan, tz: string): string {
   const lines: string[] = [`Here's my plan for "${title}":\n`];
 
   if (plan.milestones.length > 0) {
     lines.push("Milestones:");
     for (const m of plan.milestones) {
       const date = new Date(m.targetDate).toLocaleDateString("en-US", {
-        timeZone: TIMEZONE,
+        timeZone: tz,
         month: "short",
         day: "numeric",
         year: "numeric",
@@ -184,7 +185,7 @@ function formatPlanForUser(title: string, plan: GoalPlan): string {
     lines.push("Immediate tasks:");
     for (const c of plan.commitments) {
       const date = new Date(c.deadline).toLocaleDateString("en-US", {
-        timeZone: TIMEZONE,
+        timeZone: tz,
         month: "short",
         day: "numeric",
       });
@@ -222,14 +223,15 @@ export async function createGoalWithPlan(
 
   // Use the full raw message as context for plan generation so nothing gets
   // lost through the intent parser's token limit. Fall back to parsed description.
-  const plan = await generateGoalPlan(title, rawMessage ?? description);
+  const tz = await getTimezone(chatId);
+  const plan = await generateGoalPlan(title, tz, rawMessage ?? description);
 
   await prisma.goal.update({
     where: { id: goal.id },
     data: { plan: JSON.parse(JSON.stringify(plan)) },
   });
 
-  const planSummary = formatPlanForUser(title, plan);
+  const planSummary = formatPlanForUser(title, plan, tz);
   setGoalPlanningState(chatId, goal.id, title, planSummary);
 
   return { goal: { id: goal.id, title: goal.title }, planSummary };
@@ -322,6 +324,7 @@ export async function reviseGoalPlan(
     where: { id: goalId },
   });
 
+  const tz = await getTimezone(goal.chatId);
   const currentPlan = goal.plan as unknown as GoalPlan;
 
   const response = await anthropic.messages.create({
@@ -330,7 +333,7 @@ export async function reviseGoalPlan(
     messages: [
       {
         role: "user",
-        content: buildPlanPrompt(goal.title, goal.description ?? undefined),
+        content: buildPlanPrompt(goal.title, tz, goal.description ?? undefined),
       },
       {
         role: "assistant",
@@ -360,7 +363,7 @@ export async function reviseGoalPlan(
     data: { plan: JSON.parse(JSON.stringify(revisedPlan)) },
   });
 
-  const planSummary = formatPlanForUser(goal.title, revisedPlan);
+  const planSummary = formatPlanForUser(goal.title, revisedPlan, tz);
 
   // Update the planning state with new summary
   const chatId = goal.chatId;
@@ -396,6 +399,7 @@ export async function formatGoalsOverview(chatId: string): Promise<string> {
 
   if (goals.length === 0) return "No active goals.";
 
+  const tz = await getTimezone(chatId);
   const lines: string[] = ["Your goals:\n"];
 
   for (const goal of goals) {
@@ -412,7 +416,7 @@ export async function formatGoalsOverview(chatId: string): Promise<string> {
       const nextMilestone = goal.milestones.find((m) => m.status === "pending");
       if (nextMilestone) {
         const dateLabel = nextMilestone.targetDate
-          ? ` — ${nextMilestone.targetDate.toLocaleDateString("en-US", { timeZone: TIMEZONE, month: "short", day: "numeric" })}`
+          ? ` — ${nextMilestone.targetDate.toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" })}`
           : "";
         lines.push(`  Next: ${nextMilestone.text}${dateLabel}`);
       }

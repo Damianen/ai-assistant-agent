@@ -33,13 +33,14 @@ import {
 } from "../services/goals.js";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
+import { getTimezone } from "../lib/settings.js";
 
-const TIMEZONE = "Europe/Amsterdam";
 const HISTORY_LIMIT = 20;
 
-function formatDate(date: Date): string {
+async function formatDate(date: Date, chatId: string): Promise<string> {
+  const tz = await getTimezone(chatId);
   return date.toLocaleString("en-US", {
-    timeZone: TIMEZONE,
+    timeZone: tz,
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -114,14 +115,14 @@ export async function processText(ctx: Context, text: string): Promise<void> {
     }
   }
 
-  const intent = await parseIntent(text, history, checkInContext, goalPlanningContext);
+  const intent = await parseIntent(text, history, checkInContext, goalPlanningContext, chatId);
 
   switch (intent.intent) {
     case "create_reminder": {
       const fireAt = new Date(intent.datetime);
       await createReminder(chatId, intent.text, fireAt, intent.recurrence);
       await reply(
-        `Got it! I'll remind you to ${intent.text} on ${formatDate(fireAt)}`,
+        `Got it! I'll remind you to ${intent.text} on ${await formatDate(fireAt, chatId)}`,
       );
       enrichContextForMessage(text).catch(() => {});
       break;
@@ -253,11 +254,21 @@ export async function processText(ctx: Context, text: string): Promise<void> {
       break;
     }
 
+    case "set_timezone": {
+      await prisma.userSettings.upsert({
+        where: { chatId },
+        create: { chatId, timezone: intent.timezone },
+        update: { timezone: intent.timezone },
+      });
+      await reply(`Timezone set to ${intent.timezone}`);
+      break;
+    }
+
     case "create_commitment": {
       const deadline = new Date(intent.deadline);
       await createCommitment(chatId, intent.text, deadline);
       await reply(
-        `Locked in. I'll hold you to "${intent.text}" by ${formatDate(deadline)}.`,
+        `Locked in. I'll hold you to "${intent.text}" by ${await formatDate(deadline, chatId)}.`,
       );
       enrichContextForMessage(text).catch(() => {});
       break;
@@ -298,7 +309,7 @@ export async function processText(ctx: Context, text: string): Promise<void> {
         const newDeadline = new Date(intent.newDeadline);
         await rescheduleCommitment(match.id, newDeadline);
         await reply(
-          `Rescheduled "${match.text}" to ${formatDate(newDeadline)}. Don't let it slip again.`,
+          `Rescheduled "${match.text}" to ${await formatDate(newDeadline, chatId)}. Don't let it slip again.`,
         );
       } else {
         await reply(

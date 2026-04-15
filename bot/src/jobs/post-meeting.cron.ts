@@ -6,7 +6,6 @@ import { setPostMeetingState } from "../services/accountability.js";
 import { logger } from "../lib/logger.js";
 
 const chatId = process.env.TELEGRAM_CHAT_ID ?? process.env.YOUR_CHAT_ID;
-const TIMEZONE = "Europe/Amsterdam";
 
 export const postMeetingCron = cron.schedule(
   "* * * * *",
@@ -31,5 +30,4 @@ export const postMeetingCron = cron.schedule(
       logger.error({ err }, "Post-meeting check failed");
     }
   },
-  { timezone: TIMEZONE },
 );

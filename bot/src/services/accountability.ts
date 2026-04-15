@@ -4,7 +4,8 @@ import { redis } from "../lib/redis.js";
 import { bot } from "../lib/telegram.js";
 import { logger } from "../lib/logger.js";
 
-const TIMEZONE = "Europe/Amsterdam";
+import { getTimezone } from "../lib/settings.js";
+
 const accountabilityQueue = new Queue("accountability", { connection: redis });
 
 // ---------------------------------------------------------------------------
@@ -64,19 +65,19 @@ export function clearCheckInState(chatId: string): void {
 // Timezone helpers
 // ---------------------------------------------------------------------------
 
-function startOfTodayInTz(): Date {
+function startOfTodayInTz(tz: string): Date {
   const now = new Date();
-  const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE }); // YYYY-MM-DD
+  const dateStr = now.toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
   return new Date(`${dateStr}T00:00:00`);
 }
 
-function endOfTodayInTz(): Date {
-  const start = startOfTodayInTz();
+function endOfTodayInTz(tz: string): Date {
+  const start = startOfTodayInTz(tz);
   return new Date(start.getTime() + 24 * 60 * 60 * 1000);
 }
 
-function startOfDayInTz(date: Date): Date {
-  const dateStr = date.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
+function startOfDayInTz(date: Date, tz: string): Date {
+  const dateStr = date.toLocaleDateString("en-CA", { timeZone: tz });
   return new Date(`${dateStr}T00:00:00`);
 }
 
@@ -174,11 +175,12 @@ export async function getPendingCommitments(chatId: string) {
 }
 
 export async function getTodaysDueCommitments(chatId: string) {
+  const tz = await getTimezone(chatId);
   return prisma.commitment.findMany({
     where: {
       chatId,
       status: "pending",
-      deadline: { lte: endOfTodayInTz() },
+      deadline: { lte: endOfTodayInTz(tz) },
     },
     orderBy: { deadline: "asc" },
   });
@@ -202,8 +204,10 @@ export async function logHabitCompletion(
   habitId: string,
   date: Date,
   completed: boolean,
+  chatId?: string,
 ) {
-  const dayStart = startOfDayInTz(date);
+  const tz = await getTimezone(chatId);
+  const dayStart = startOfDayInTz(date, tz);
   return prisma.habitLog.upsert({
     where: { habitId_date: { habitId, date: dayStart } },
     create: { habitId, date: dayStart, completed },
@@ -226,7 +230,8 @@ export async function skipHabitToday(
 
   if (!habit) return null;
 
-  const today = startOfTodayInTz();
+  const tz = await getTimezone(chatId);
+  const today = startOfTodayInTz(tz);
   await prisma.habitLog.upsert({
     where: { habitId_date: { habitId: habit.id, date: today } },
     create: {
@@ -253,7 +258,8 @@ export async function getTodaysHabitStatus(chatId: string) {
   const habits = await getActiveHabits(chatId);
   if (habits.length === 0) return [];
 
-  const today = startOfTodayInTz();
+  const tz = await getTimezone(chatId);
+  const today = startOfTodayInTz(tz);
   const weekAgo = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
 
   const results = await Promise.all(
@@ -298,7 +304,8 @@ export async function getHabitStreak(habitId: string): Promise<number> {
 
   if (logs.length === 0) return 0;
 
-  const today = startOfTodayInTz();
+  const tz = await getTimezone(habit.chatId);
+  const today = startOfTodayInTz(tz);
   let streak = 0;
 
   // Check consecutive 7-day windows going backwards
@@ -378,7 +385,8 @@ export async function processCheckInResponse(
   }
 
   const checkInItems = await getCheckInItems(chatId, state);
-  const today = startOfTodayInTz();
+  const tz = await getTimezone(chatId);
+  const today = startOfTodayInTz(tz);
   const completed: string[] = [];
   const missed: string[] = [];
 
@@ -477,7 +485,8 @@ export async function getWeeklyStats(
 
   // Habit stats
   const habits = await getActiveHabits(chatId);
-  const today = startOfTodayInTz();
+  const tz = await getTimezone(chatId);
+  const today = startOfTodayInTz(tz);
   const rollingWeekStart = new Date(
     today.getTime() - 6 * 24 * 60 * 60 * 1000,
   );
@@ -582,9 +591,10 @@ export async function formatCommitmentsOverview(
 
   if (commitments.length === 0) return "No pending commitments.";
 
+  const tz = await getTimezone(chatId);
   const lines = commitments.map((c) => {
     const deadline = c.deadline.toLocaleDateString("en-US", {
-      timeZone: TIMEZONE,
+      timeZone: tz,
       weekday: "short",
       month: "short",
       day: "numeric",

@@ -1,9 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { getTimezone } from "../lib/settings.js";
 
 const anthropic = new Anthropic();
-
-const TIMEZONE = "Europe/Amsterdam";
 
 const CreateReminderSchema = z.object({
   intent: z.literal("create_reminder"),
@@ -174,6 +173,11 @@ const ReviseGoalPlanSchema = z.object({
   feedback: z.string(),
 });
 
+const SetTimezoneSchema = z.object({
+  intent: z.literal("set_timezone"),
+  timezone: z.string(),
+});
+
 const UnknownSchema = z.object({
   intent: z.literal("unknown"),
   reply: z.string(),
@@ -210,6 +214,7 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   CompleteMilestoneSchema,
   ApproveGoalPlanSchema,
   ReviseGoalPlanSchema,
+  SetTimezoneSchema,
   UnknownSchema,
 ]);
 
@@ -220,9 +225,9 @@ export interface ChatHistoryMessage {
   content: string;
 }
 
-function buildSystemPrompt(): string {
+async function buildSystemPrompt(timezone: string): Promise<string> {
   const now = new Date().toLocaleDateString("en-US", {
-    timeZone: TIMEZONE,
+    timeZone: timezone,
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -232,7 +237,7 @@ function buildSystemPrompt(): string {
   return `You are a personal assistant parser. Extract intent from the user's latest message. Use prior messages in the conversation for context when resolving references like "this", "that", "it", "same time", etc. Return ONLY valid JSON with no explanation, no markdown, no backticks.
 
 Today: ${now}
-User timezone: ${TIMEZONE}
+User timezone: ${timezone}
 
 Supported intents and their exact JSON shapes:
 
@@ -353,6 +358,10 @@ complete_milestone:
 { "intent": "complete_milestone", "milestoneText": "string (partial match ok)" }
 Use when the user says they've reached a milestone for a goal. Examples: "I've hit 1 week without smoking", "finished the MVP milestone", "completed the first phase".
 
+set_timezone:
+{ "intent": "set_timezone", "timezone": "string (IANA timezone, e.g. Europe/Amsterdam, America/New_York, Asia/Tokyo)" }
+Use when the user wants to change their timezone. Examples: "set my timezone to US Eastern", "change timezone to Asia/Tokyo", "I'm in London now", "switch to Pacific time".
+
 unknown:
 { "intent": "unknown", "reply": "string (friendly response to the user)" }
 
@@ -373,13 +382,15 @@ export async function parseIntent(
   history: ChatHistoryMessage[] = [],
   checkInContext?: CheckInContext,
   goalPlanningContext?: GoalPlanningContext,
+  chatId?: string,
 ): Promise<ParsedIntent> {
   const messages: ChatHistoryMessage[] = [
     ...history,
     { role: "user", content: message },
   ];
 
-  let systemPrompt = buildSystemPrompt();
+  const timezone = await getTimezone(chatId);
+  let systemPrompt = await buildSystemPrompt(timezone);
 
   if (checkInContext?.postMeetingEvent) {
     systemPrompt += `\n\nIMPORTANT: The user is responding to a post-meeting action items prompt for "${checkInContext.postMeetingEvent}". Parse their response as a "post_meeting_action_items" intent. Extract each action item with a deadline. If no explicit deadline, default to this Friday at 17:00. If the user says "no", "nothing", or "none", return an empty items array.`;

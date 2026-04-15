@@ -175,5 +175,4 @@ export const reflectionCron = cron.schedule(
       logger.error({ err }, "Weekly reflection failed");
     }
   },
-  { timezone: "Europe/Amsterdam" },
 );

@@ -92,6 +92,7 @@ model UserSettings {
   calendarReminderMinutes Int    @default(5)
   morningBriefHour        Int    @default(8)
   eveningCheckInHour      Int    @default(21)
+  timezone                String @default("Europe/Amsterdam")
 }
 
 enum CommitmentStatus {

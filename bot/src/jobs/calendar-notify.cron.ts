@@ -8,12 +8,15 @@ import { logger } from "../lib/logger.js";
 const chatId = process.env.TELEGRAM_CHAT_ID ?? process.env.YOUR_CHAT_ID;
 const DEFAULT_REMINDER_MINUTES = 5;
 
-async function getReminderMinutes(): Promise<number> {
-  if (!chatId) return DEFAULT_REMINDER_MINUTES;
+async function getSettings() {
+  if (!chatId) return { reminderMinutes: DEFAULT_REMINDER_MINUTES, timezone: "Europe/Amsterdam" };
   const settings = await prisma.userSettings.findUnique({
     where: { chatId },
   });
-  return settings?.calendarReminderMinutes ?? DEFAULT_REMINDER_MINUTES;
+  return {
+    reminderMinutes: settings?.calendarReminderMinutes ?? DEFAULT_REMINDER_MINUTES,
+    timezone: settings?.timezone ?? "Europe/Amsterdam",
+  };
 }
 
 export const calendarNotifyCron = cron.schedule(
@@ -22,7 +25,7 @@ export const calendarNotifyCron = cron.schedule(
     if (!chatId) return;
 
     try {
-      const reminderMinutes = await getReminderMinutes();
+      const { reminderMinutes } = await getSettings();
       if (reminderMinutes <= 0) return; // notifications disabled
 
       const events = await getUpcomingEventsRaw(reminderMinutes);
@@ -45,5 +48,4 @@ export const calendarNotifyCron = cron.schedule(
       logger.error({ err }, "Calendar notification check failed");
     }
   },
-  { timezone: "Europe/Amsterdam" },
 );

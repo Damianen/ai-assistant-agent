@@ -4,9 +4,9 @@ import { redis } from "../lib/redis.js";
 import { prisma } from "../db/prisma.js";
 import { getDailyBrief } from "../services/briefing.js";
 import { logger } from "../lib/logger.js";
+import { getTimezone } from "../lib/settings.js";
 
 const chatId = process.env.TELEGRAM_CHAT_ID ?? process.env.YOUR_CHAT_ID;
-const TIMEZONE = "Europe/Amsterdam";
 const DEFAULT_MORNING_HOUR = 8;
 
 export const briefingCron = cron.schedule(
@@ -15,10 +15,11 @@ export const briefingCron = cron.schedule(
     if (!chatId) return;
 
     try {
+      const tz = await getTimezone(chatId);
       const now = new Date();
       const currentHour = parseInt(
         now.toLocaleString("en-US", {
-          timeZone: TIMEZONE,
+          timeZone: tz,
           hour: "numeric",
           hour12: false,
         }),
@@ -42,5 +43,4 @@ export const briefingCron = cron.schedule(
       logger.error({ err }, "Daily briefing failed");
     }
   },
-  { timezone: TIMEZONE },
 );

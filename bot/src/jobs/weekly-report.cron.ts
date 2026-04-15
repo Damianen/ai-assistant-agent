@@ -7,18 +7,18 @@ import {
   type WeeklyAccountabilityStats,
 } from "../services/accountability.js";
 import { logger } from "../lib/logger.js";
+import { getTimezone } from "../lib/settings.js";
 
 const anthropic = new Anthropic();
 const chatId = process.env.TELEGRAM_CHAT_ID ?? process.env.YOUR_CHAT_ID;
-const TIMEZONE = "Europe/Amsterdam";
 
-function buildReportPrompt(stats: WeeklyAccountabilityStats): string {
+function buildReportPrompt(stats: WeeklyAccountabilityStats, tz: string): string {
   const missedList =
     stats.commitments.missedItems.length > 0
       ? stats.commitments.missedItems
           .map(
             (c) =>
-              `  - MISSED: "${c.text}" (due ${c.deadline.toLocaleDateString("en-US", { timeZone: TIMEZONE, weekday: "short", month: "short", day: "numeric" })})`,
+              `  - MISSED: "${c.text}" (due ${c.deadline.toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" })})`,
           )
           .join("\n")
       : "  None";
@@ -74,10 +74,11 @@ export const weeklyReportCron = cron.schedule(
       // Skip if there's nothing to report
       if (stats.commitments.total === 0 && stats.habits.length === 0) return;
 
+      const tz = await getTimezone(chatId);
       const response = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 800,
-        messages: [{ role: "user", content: buildReportPrompt(stats) }],
+        messages: [{ role: "user", content: buildReportPrompt(stats, tz) }],
       });
 
       const block = response.content[0];
@@ -88,5 +89,4 @@ export const weeklyReportCron = cron.schedule(
       logger.error({ err }, "Weekly accountability report failed");
     }
   },
-  { timezone: TIMEZONE },
 );

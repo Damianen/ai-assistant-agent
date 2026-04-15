@@ -8,9 +8,9 @@ import {
   setCheckInState,
 } from "../services/accountability.js";
 import { logger } from "../lib/logger.js";
+import { getTimezone } from "../lib/settings.js";
 
 const chatId = process.env.TELEGRAM_CHAT_ID ?? process.env.YOUR_CHAT_ID;
-const TIMEZONE = "Europe/Amsterdam";
 const DEFAULT_EVENING_HOUR = 21;
 
 export const eveningCheckInCron = cron.schedule(
@@ -19,10 +19,11 @@ export const eveningCheckInCron = cron.schedule(
     if (!chatId) return;
 
     try {
+      const tz = await getTimezone(chatId);
       const now = new Date();
       const currentHour = parseInt(
         now.toLocaleString("en-US", {
-          timeZone: TIMEZONE,
+          timeZone: tz,
           hour: "numeric",
           hour12: false,
         }),
@@ -91,5 +92,4 @@ export const eveningCheckInCron = cron.schedule(
       logger.error({ err }, "Evening check-in failed");
     }
   },
-  { timezone: TIMEZONE },
 );

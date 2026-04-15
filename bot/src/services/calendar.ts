@@ -1,9 +1,9 @@
 import { google } from "googleapis";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../lib/logger.js";
+import { getTimezone } from "../lib/settings.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar"];
-const TIMEZONE = "Europe/Amsterdam";
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(
@@ -77,11 +77,12 @@ async function getAuthedClient() {
   return client;
 }
 
-function formatEventTime(raw: string): string {
+async function formatEventTime(raw: string): Promise<string> {
   const d = new Date(raw);
   if (isNaN(d.getTime())) return raw;
+  const tz = await getTimezone();
   return d.toLocaleString("en-US", {
-    timeZone: TIMEZONE,
+    timeZone: tz,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -100,14 +101,15 @@ export async function createCalendarEvent(
   const auth = await getAuthedClient();
   if (!auth) throw new Error("CALENDAR_NOT_CONNECTED");
 
+  const tz = await getTimezone();
   const calendar = google.calendar({ version: "v3", auth });
   const event = await calendar.events.insert({
     calendarId: "primary",
     requestBody: {
       summary,
       description,
-      start: { dateTime: start.toISOString(), timeZone: TIMEZONE },
-      end: { dateTime: end.toISOString(), timeZone: TIMEZONE },
+      start: { dateTime: start.toISOString(), timeZone: tz },
+      end: { dateTime: end.toISOString(), timeZone: tz },
       ...(recurrence ? { recurrence: [recurrence] } : {}),
     },
   });
@@ -135,12 +137,13 @@ export async function listUpcomingEvents(days: number): Promise<string> {
   const events = res.data.items ?? [];
   if (events.length === 0) return "No upcoming events.";
 
-  return events
-    .map((e) => {
+  const lines = await Promise.all(
+    events.map(async (e) => {
       const start = e.start?.dateTime ?? e.start?.date ?? "?";
-      return `- ${e.summary ?? "(no title)"} (${formatEventTime(start)})`;
-    })
-    .join("\n");
+      return `- ${e.summary ?? "(no title)"} (${await formatEventTime(start)})`;
+    }),
+  );
+  return lines.join("\n");
 }
 
 export interface CalendarEvent {

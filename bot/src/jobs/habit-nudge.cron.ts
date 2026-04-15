@@ -3,9 +3,9 @@ import { bot } from "../lib/telegram.js";
 import { redis } from "../lib/redis.js";
 import { getTodaysHabitStatus } from "../services/accountability.js";
 import { logger } from "../lib/logger.js";
+import { getTimezone } from "../lib/settings.js";
 
 const chatId = process.env.TELEGRAM_CHAT_ID ?? process.env.YOUR_CHAT_ID;
-const TIMEZONE = "Europe/Amsterdam";
 const NUDGE_HOUR = 15; // 3pm
 
 export const habitNudgeCron = cron.schedule(
@@ -14,10 +14,11 @@ export const habitNudgeCron = cron.schedule(
     if (!chatId) return;
 
     try {
+      const tz = await getTimezone(chatId);
       const now = new Date();
       const currentHour = parseInt(
         now.toLocaleString("en-US", {
-          timeZone: TIMEZONE,
+          timeZone: tz,
           hour: "numeric",
           hour12: false,
         }),
@@ -33,7 +34,7 @@ export const habitNudgeCron = cron.schedule(
 
       // Find habits that are falling behind
       const dayOfWeek = new Date(
-        now.toLocaleString("en-US", { timeZone: TIMEZONE }),
+        now.toLocaleString("en-US", { timeZone: tz }),
       ).getDay();
       // Days remaining in the rolling week (including today)
       const daysRemaining = Math.max(1, 7 - dayOfWeek);
@@ -63,5 +64,4 @@ export const habitNudgeCron = cron.schedule(
       logger.error({ err }, "Habit nudge failed");
     }
   },
-  { timezone: TIMEZONE },
 );
