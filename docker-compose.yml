@@ -76,7 +76,7 @@ services:
       - ingress-net
 
   watchtower:
-    image: containrrr/watchtower
+    image: containrrr/watchtower:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /root/.docker/config.json:/config.json:ro
@@ -84,6 +84,7 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_POLL_INTERVAL: "300"
       WATCHTOWER_SCOPE: "netflu"
+      DOCKER_API_VERSION: "1.40"
     labels:
       - "com.centurylinklabs.watchtower.scope=netflu"
     restart: unless-stopped
