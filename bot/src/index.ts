@@ -15,7 +15,7 @@ import { postMeetingCron } from "./jobs/post-meeting.cron.js";
 import { handleMessage } from "./handlers/message.js";
 import { handleVoice } from "./handlers/voice.js";
 import { handlePhoto } from "./handlers/photo.js";
-import { handleStatus, handleHelp, handleReset } from "./handlers/commands.js";
+import { handleStatus, handleHelp, handleReset, handleClear } from "./handlers/commands.js";
 import { seedSchema } from "./db/schema-registry.js";
 import { runQuery, closeGraph } from "./db/graph.js";
 import { isRateLimited } from "./lib/rate-limiter.js";
@@ -96,6 +96,7 @@ bot.on("message", async (ctx, next) => {
 bot.command("status", handleStatus);
 bot.command("help", handleHelp);
 bot.command("reset", handleReset);
+bot.command("clear", handleClear);
 
 // ---------------------------------------------------------------------------
 // Message handlers

@@ -103,17 +103,48 @@ export async function handleHelp(ctx: Context): Promise<void> {
     '  "Skip exercise today, rest day" — rest day',
     '  "Set morning briefing to 7am"',
     '  "Change evening check-in to 10pm"\n',
+    "Calendar",
+    '  "Add a meeting at 10am" — create event',
+    '  "Add standup at 9am and lunch at noon" — multiple events',
+    '  "What\'s on my calendar today?"',
+    '  "Move gym to 5pm" — reschedule event',
+    '  "Rename standup to daily sync" — edit event',
+    '  "Move gym to 5pm and dentist to Thursday" — bulk edits',
+    '  "Make gym events basil" — set color preference',
+    '  "Set calendar reminders to 10 minutes"\n',
+    "Goals",
+    '  "I want to run a marathon" — create goal with plan',
+    '  "How are my goals going?" — view progress\n',
     "Briefing",
     '  "Give me my daily briefing"\n',
-    "Voice",
-    "  Send a voice message and I'll transcribe and process it\n",
+    "Media",
+    "  Send a voice message — transcribed and processed",
+    "  Send a photo — analyzed with AI vision\n",
+    "Settings",
+    '  "Set my timezone to America/New_York"',
+    '  "Set morning briefing to 7am"',
+    '  "Change evening check-in to 10pm"\n',
     "Commands",
     "  /status — system health check",
+    "  /clear — clear conversation history",
     "  /reset — erase entire knowledge base and start fresh",
     "  /help — this message",
   ];
 
   await ctx.reply(text.join("\n"));
+}
+
+export async function handleClear(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id?.toString();
+  if (!chatId) return;
+
+  try {
+    const { count } = await prisma.chatMessage.deleteMany({ where: { chatId } });
+    await ctx.reply(`Conversation history cleared (${count} messages).`);
+  } catch (err) {
+    logger.error({ err }, "/clear failed");
+    await ctx.reply("Failed to clear conversation history.");
+  }
 }
 
 const pendingResets = new Set<string>();
