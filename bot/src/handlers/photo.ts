@@ -59,34 +59,36 @@ export async function handlePhoto(ctx: Context): Promise<void> {
       ? `The user sent a photo with this caption: "${caption}"\n\nDescribe what you see and respond to their message.`
       : "The user sent a photo. Describe what you see and respond helpfully.";
 
+    const messages: Anthropic.MessageParam[] = [
+      ...historyMessages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+      {
+        role: "user" as const,
+        content: [
+          {
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: mediaType,
+              data: base64,
+            },
+          },
+          {
+            type: "text" as const,
+            text: userPrompt,
+          },
+        ],
+      },
+    ];
+
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
       system:
         "You are a personal AI assistant. The user sent you an image via Telegram. Be helpful, concise, and natural in your response. If they asked a question about the image, answer it directly.",
-      messages: [
-        ...historyMessages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-        {
-          role: "user",
-          content: [
-            {
-              type: "image" as const,
-              source: {
-                type: "base64" as const,
-                media_type: mediaType,
-                data: base64,
-              },
-            },
-            {
-              type: "text" as const,
-              content: userPrompt,
-            },
-          ],
-        },
-      ],
+      messages,
     });
 
     const textBlock = response.content.find((b) => b.type === "text");
