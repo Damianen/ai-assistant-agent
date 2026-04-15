@@ -201,17 +201,21 @@ export async function processText(ctx: Context, text: string): Promise<void> {
 
     case "create_calendar_event": {
       try {
-        const link = await createCalendarEvent(
-          intent.summary,
-          new Date(intent.start),
-          new Date(intent.end),
-          intent.description,
-          intent.recurrence,
-        );
-        const label = intent.recurrence
-          ? `Recurring event created: ${intent.summary}`
-          : `Event created: ${intent.summary}`;
-        await reply(`${label}\n${link}`);
+        const results: string[] = [];
+        for (const event of intent.events) {
+          const link = await createCalendarEvent(
+            event.summary,
+            new Date(event.start),
+            new Date(event.end),
+            event.description,
+            event.recurrence,
+          );
+          const label = event.recurrence
+            ? `Recurring event created: ${event.summary}`
+            : `Event created: ${event.summary}`;
+          results.push(`${label}\n${link}`);
+        }
+        await reply(results.join("\n\n"));
       } catch (err) {
         if (err instanceof Error && err.message === "CALENDAR_NOT_CONNECTED") {
           const url = getAuthUrl();

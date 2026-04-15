@@ -43,13 +43,17 @@ const DeleteMemorySchema = z.object({
   query: z.string(),
 });
 
-const CreateCalendarEventSchema = z.object({
-  intent: z.literal("create_calendar_event"),
+const CalendarEventItem = z.object({
   summary: z.string(),
   start: z.string(),
   end: z.string(),
   description: z.string().optional(),
   recurrence: z.string().nullable().optional(),
+});
+
+const CreateCalendarEventSchema = z.object({
+  intent: z.literal("create_calendar_event"),
+  events: z.array(CalendarEventItem),
 });
 
 const QueryCalendarSchema = z.object({
@@ -264,7 +268,8 @@ delete_memory:
 Use this when the user asks to forget, remove, or delete something from memory (e.g. "forget about Sarah", "remove the info about my trip to Paris", "delete everything about X").
 
 create_calendar_event:
-{ "intent": "create_calendar_event", "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)", "recurrence": "RRULE string or null" }
+{ "intent": "create_calendar_event", "events": [{ "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)", "recurrence": "RRULE string or null" }] }
+The events array supports one or more events. If the user mentions multiple events, include them all.
 If no end time is specified, default to 1 hour after start.
 Use this for any request to add, create, or schedule a meeting, event, or appointment on the calendar. Do NOT use create_memory for calendar events.
 If the user says "daily", "every day", "every weekday", "weekly", "every Monday", etc., extract a recurrence rule:
