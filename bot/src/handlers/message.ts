@@ -2,7 +2,7 @@ import type { Context } from "grammy";
 import { parseIntent, type ChatHistoryMessage, type CheckInContext, type GoalPlanningContext } from "../services/llm.js";
 import { createReminder } from "../services/reminders.js";
 import { getDailyBrief } from "../services/briefing.js";
-import { createCalendarEvent, listUpcomingEvents, getAuthUrl } from "../services/calendar.js";
+import { createCalendarEvent, listUpcomingEvents, getAuthUrl, COLOR_NAME_TO_ID, CALENDAR_COLORS } from "../services/calendar.js";
 import { processWithBrain, enrichContextForMessage } from "../services/brain.js";
 import {
   createCommitment,
@@ -203,12 +203,15 @@ export async function processText(ctx: Context, text: string): Promise<void> {
       try {
         const results: string[] = [];
         for (const event of intent.events) {
+          const colorId = event.color ? COLOR_NAME_TO_ID[event.color] ?? null : null;
           const link = await createCalendarEvent(
             event.summary,
             new Date(event.start),
             new Date(event.end),
             event.description,
             event.recurrence,
+            colorId,
+            chatId,
           );
           const label = event.recurrence
             ? `Recurring event created: ${event.summary}`
@@ -265,6 +268,22 @@ export async function processText(ctx: Context, text: string): Promise<void> {
         update: { timezone: intent.timezone },
       });
       await reply(`Timezone set to ${intent.timezone}`);
+      break;
+    }
+
+    case "set_event_color": {
+      const colorId = COLOR_NAME_TO_ID[intent.color];
+      if (!colorId) {
+        const available = Object.values(CALENDAR_COLORS).join(", ");
+        await reply(`Unknown color "${intent.color}". Available: ${available}`);
+        break;
+      }
+      await prisma.calendarColorPreference.upsert({
+        where: { chatId_category: { chatId, category: intent.category.toLowerCase() } },
+        create: { chatId, category: intent.category.toLowerCase(), colorId },
+        update: { colorId },
+      });
+      await reply(`Events matching "${intent.category}" will now be ${intent.color}`);
       break;
     }
 

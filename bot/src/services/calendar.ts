@@ -91,15 +91,57 @@ async function formatEventTime(raw: string): Promise<string> {
   });
 }
 
+// Google Calendar colorId mapping
+export const CALENDAR_COLORS: Record<string, string> = {
+  "1": "lavender",
+  "2": "sage",
+  "3": "grape",
+  "4": "flamingo",
+  "5": "banana",
+  "6": "tangerine",
+  "7": "peacock",
+  "8": "graphite",
+  "9": "blueberry",
+  "10": "basil",
+  "11": "tomato",
+};
+
+export const COLOR_NAME_TO_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(CALENDAR_COLORS).map(([id, name]) => [name, id]),
+);
+
+export async function getColorForCategory(
+  chatId: string,
+  summary: string,
+): Promise<string | undefined> {
+  const prefs = await prisma.calendarColorPreference.findMany({
+    where: { chatId },
+  });
+  if (prefs.length === 0) return undefined;
+
+  const summaryLower = summary.toLowerCase();
+  // Find the best matching category
+  const match = prefs.find((p) => summaryLower.includes(p.category.toLowerCase()));
+  return match?.colorId;
+}
+
 export async function createCalendarEvent(
   summary: string,
   start: Date,
   end: Date,
   description?: string,
   recurrence?: string | null,
+  colorId?: string | null,
+  chatId?: string,
 ): Promise<string> {
   const auth = await getAuthedClient();
   if (!auth) throw new Error("CALENDAR_NOT_CONNECTED");
+
+  // Auto-detect color from preferences if not explicitly set
+  let finalColorId = colorId;
+  if (!finalColorId && chatId) {
+    finalColorId = await getColorForCategory(chatId, summary);
+  }
 
   const tz = await getTimezone();
   const calendar = google.calendar({ version: "v3", auth });
@@ -108,6 +150,7 @@ export async function createCalendarEvent(
     requestBody: {
       summary,
       description,
+      ...(finalColorId ? { colorId: finalColorId } : {}),
       start: { dateTime: start.toISOString(), timeZone: tz },
       end: { dateTime: end.toISOString(), timeZone: tz },
       ...(recurrence ? { recurrence: [recurrence] } : {}),

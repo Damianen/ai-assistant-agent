@@ -49,6 +49,7 @@ const CalendarEventItem = z.object({
   end: z.string(),
   description: z.string().optional(),
   recurrence: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
 });
 
 const CreateCalendarEventSchema = z.object({
@@ -182,6 +183,12 @@ const SetTimezoneSchema = z.object({
   timezone: z.string(),
 });
 
+const SetEventColorSchema = z.object({
+  intent: z.literal("set_event_color"),
+  category: z.string(),
+  color: z.string(),
+});
+
 const UnknownSchema = z.object({
   intent: z.literal("unknown"),
   reply: z.string(),
@@ -219,6 +226,7 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   ApproveGoalPlanSchema,
   ReviseGoalPlanSchema,
   SetTimezoneSchema,
+  SetEventColorSchema,
   UnknownSchema,
 ]);
 
@@ -268,8 +276,9 @@ delete_memory:
 Use this when the user asks to forget, remove, or delete something from memory (e.g. "forget about Sarah", "remove the info about my trip to Paris", "delete everything about X").
 
 create_calendar_event:
-{ "intent": "create_calendar_event", "events": [{ "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)", "recurrence": "RRULE string or null" }] }
+{ "intent": "create_calendar_event", "events": [{ "summary": "string", "start": "ISO8601 string", "end": "ISO8601 string", "description": "string (optional)", "recurrence": "RRULE string or null", "color": "color name or null" }] }
 The events array supports one or more events. If the user mentions multiple events, include them all.
+Available colors: lavender, sage, grape, flamingo, banana, tangerine, peacock, graphite, blueberry, basil, tomato. Set color to null if the user doesn't specify one (the system will auto-apply based on their preferences).
 If no end time is specified, default to 1 hour after start.
 Use this for any request to add, create, or schedule a meeting, event, or appointment on the calendar. Do NOT use create_memory for calendar events.
 If the user says "daily", "every day", "every weekday", "weekly", "every Monday", etc., extract a recurrence rule:
@@ -366,6 +375,10 @@ Use when the user says they've reached a milestone for a goal. Examples: "I've h
 set_timezone:
 { "intent": "set_timezone", "timezone": "string (IANA timezone, e.g. Europe/Amsterdam, America/New_York, Asia/Tokyo)" }
 Use when the user wants to change their timezone. Examples: "set my timezone to US Eastern", "change timezone to Asia/Tokyo", "I'm in London now", "switch to Pacific time".
+
+set_event_color:
+{ "intent": "set_event_color", "category": "string (lowercase keyword, e.g. gym, meeting, dentist, work)", "color": "string (one of: lavender, sage, grape, flamingo, banana, tangerine, peacock, graphite, blueberry, basil, tomato)" }
+Use when the user wants to set a default color for a type of calendar event. Examples: "make gym events green", "set meetings to blueberry", "color work events tomato", "use peacock for all dentist appointments".
 
 unknown:
 { "intent": "unknown", "reply": "string (friendly response to the user)" }

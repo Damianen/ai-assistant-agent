@@ -186,3 +186,13 @@ model Milestone {
 
   @@index([goalId, status])
 }
+
+model CalendarColorPreference {
+  id       String @id @default(cuid())
+  chatId   String
+  category String
+  colorId  String
+
+  @@unique([chatId, category])
+  @@index([chatId])
+}
