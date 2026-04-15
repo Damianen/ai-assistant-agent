@@ -268,6 +268,85 @@ export async function getRecentlyEndedEvents(
   return events;
 }
 
+export async function findEventBySearch(
+  searchText: string,
+  days: number = 14,
+): Promise<CalendarEvent | null> {
+  const auth = await getAuthedClient();
+  if (!auth) return null;
+
+  const calendar = google.calendar({ version: "v3", auth });
+  const now = new Date();
+  const until = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+  const res = await calendar.events.list({
+    calendarId: "primary",
+    timeMin: now.toISOString(),
+    timeMax: until.toISOString(),
+    q: searchText,
+    singleEvents: true,
+    orderBy: "startTime",
+    maxResults: 5,
+  });
+
+  const items = res.data.items ?? [];
+  if (items.length === 0) return null;
+
+  const e = items[0];
+  const startDt = e.start?.dateTime ?? e.start?.date;
+  const endDt = e.end?.dateTime ?? e.end?.date;
+  if (!startDt || !endDt || !e.id) return null;
+
+  return {
+    id: e.id,
+    summary: e.summary ?? "(no title)",
+    start: new Date(startDt),
+    end: new Date(endDt),
+  };
+}
+
+export async function updateCalendarEvent(
+  eventId: string,
+  updates: {
+    summary?: string;
+    start?: Date;
+    end?: Date;
+    description?: string;
+    colorId?: string;
+  },
+): Promise<string> {
+  const auth = await getAuthedClient();
+  if (!auth) throw new Error("CALENDAR_NOT_CONNECTED");
+
+  const tz = await getTimezone();
+  const calendar = google.calendar({ version: "v3", auth });
+
+  // Fetch existing event first to merge updates
+  const existing = await calendar.events.get({
+    calendarId: "primary",
+    eventId,
+  });
+
+  const event = await calendar.events.update({
+    calendarId: "primary",
+    eventId,
+    requestBody: {
+      summary: updates.summary ?? existing.data.summary ?? undefined,
+      description: updates.description ?? existing.data.description ?? undefined,
+      colorId: updates.colorId ?? existing.data.colorId ?? undefined,
+      start: updates.start
+        ? { dateTime: updates.start.toISOString(), timeZone: tz }
+        : existing.data.start ?? undefined,
+      end: updates.end
+        ? { dateTime: updates.end.toISOString(), timeZone: tz }
+        : existing.data.end ?? undefined,
+      recurrence: existing.data.recurrence ?? undefined,
+    },
+  });
+
+  return event.data.htmlLink ?? "Event updated (no link available)";
+}
+
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
   const auth = await getAuthedClient();
   if (!auth) throw new Error("CALENDAR_NOT_CONNECTED");

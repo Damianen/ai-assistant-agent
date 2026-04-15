@@ -62,6 +62,18 @@ const QueryCalendarSchema = z.object({
   days: z.number(),
 });
 
+const EditCalendarEventSchema = z.object({
+  intent: z.literal("edit_calendar_event"),
+  searchText: z.string(),
+  updates: z.object({
+    summary: z.string().optional(),
+    start: z.string().optional(),
+    end: z.string().optional(),
+    description: z.string().optional(),
+    color: z.string().nullable().optional(),
+  }),
+});
+
 const SetCalendarReminderSchema = z.object({
   intent: z.literal("set_calendar_reminder"),
   minutes: z.number(),
@@ -203,6 +215,7 @@ const ParsedIntentSchema = z.discriminatedUnion("intent", [
   RecallSchema,
   DeleteMemorySchema,
   CreateCalendarEventSchema,
+  EditCalendarEventSchema,
   QueryCalendarSchema,
   SetCalendarReminderSchema,
   CreateCommitmentSchema,
@@ -294,6 +307,12 @@ For recurring events, set "start" to the first occurrence.
 query_calendar:
 { "intent": "query_calendar", "days": number }
 Use this when the user wants to check, view, or list their calendar events. "days" is how far ahead to look (1 = today, 7 = this week, 30 = this month).
+
+edit_calendar_event:
+{ "intent": "edit_calendar_event", "searchText": "string (event name to find)", "updates": { "summary": "string (optional, new title)", "start": "ISO8601 string (optional, new start)", "end": "ISO8601 string (optional, new end)", "description": "string (optional)", "color": "color name or null (optional)" } }
+Use when the user wants to move, reschedule, rename, or edit an existing calendar event. Only include fields that are changing.
+Examples: "move my gym session to 4pm", "rename the team meeting to standup", "change my dentist to Thursday at 10am", "move lunch to tomorrow".
+If only the start time changes and no new end time is specified, shift the end time by the same amount.
 
 set_calendar_reminder:
 { "intent": "set_calendar_reminder", "minutes": number }

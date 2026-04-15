@@ -2,7 +2,7 @@ import type { Context } from "grammy";
 import { parseIntent, type ChatHistoryMessage, type CheckInContext, type GoalPlanningContext } from "../services/llm.js";
 import { createReminder } from "../services/reminders.js";
 import { getDailyBrief } from "../services/briefing.js";
-import { createCalendarEvent, listUpcomingEvents, getAuthUrl, COLOR_NAME_TO_ID, CALENDAR_COLORS } from "../services/calendar.js";
+import { createCalendarEvent, listUpcomingEvents, getAuthUrl, COLOR_NAME_TO_ID, CALENDAR_COLORS, findEventBySearch, updateCalendarEvent } from "../services/calendar.js";
 import { processWithBrain, enrichContextForMessage } from "../services/brain.js";
 import {
   createCommitment,
@@ -244,6 +244,44 @@ export async function processText(ctx: Context, text: string): Promise<void> {
         await reply(events);
       }
       enrichContextForMessage(text).catch(() => {});
+      break;
+    }
+
+    case "edit_calendar_event": {
+      try {
+        const event = await findEventBySearch(intent.searchText);
+        if (!event) {
+          await reply(`Couldn't find an upcoming event matching "${intent.searchText}".`);
+          break;
+        }
+
+        const colorId = intent.updates.color
+          ? COLOR_NAME_TO_ID[intent.updates.color] ?? undefined
+          : undefined;
+
+        const link = await updateCalendarEvent(event.id, {
+          summary: intent.updates.summary,
+          start: intent.updates.start ? new Date(intent.updates.start) : undefined,
+          end: intent.updates.end ? new Date(intent.updates.end) : undefined,
+          description: intent.updates.description,
+          colorId,
+        });
+
+        const changes: string[] = [];
+        if (intent.updates.summary) changes.push(`renamed to "${intent.updates.summary}"`);
+        if (intent.updates.start) changes.push(`moved to ${await formatDate(new Date(intent.updates.start), chatId)}`);
+        if (intent.updates.color) changes.push(`color set to ${intent.updates.color}`);
+        const changeLabel = changes.length > 0 ? changes.join(", ") : "updated";
+
+        await reply(`"${event.summary}" ${changeLabel}\n${link}`);
+      } catch (err) {
+        if (err instanceof Error && err.message === "CALENDAR_NOT_CONNECTED") {
+          const url = getAuthUrl();
+          await reply(`I need access to your Google Calendar first.\nPlease authorize here: ${url}`);
+        } else {
+          throw err;
+        }
+      }
       break;
     }
 
