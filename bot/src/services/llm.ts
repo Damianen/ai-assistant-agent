@@ -62,8 +62,7 @@ const QueryCalendarSchema = z.object({
   days: z.number(),
 });
 
-const EditCalendarEventSchema = z.object({
-  intent: z.literal("edit_calendar_event"),
+const CalendarEditItem = z.object({
   searchText: z.string(),
   updates: z.object({
     summary: z.string().optional(),
@@ -72,6 +71,11 @@ const EditCalendarEventSchema = z.object({
     description: z.string().optional(),
     color: z.string().nullable().optional(),
   }),
+});
+
+const EditCalendarEventSchema = z.object({
+  intent: z.literal("edit_calendar_event"),
+  edits: z.array(CalendarEditItem),
 });
 
 const SetCalendarReminderSchema = z.object({
@@ -309,9 +313,10 @@ query_calendar:
 Use this when the user wants to check, view, or list their calendar events. "days" is how far ahead to look (1 = today, 7 = this week, 30 = this month).
 
 edit_calendar_event:
-{ "intent": "edit_calendar_event", "searchText": "string (event name to find)", "updates": { "summary": "string (optional, new title)", "start": "ISO8601 string (optional, new start)", "end": "ISO8601 string (optional, new end)", "description": "string (optional)", "color": "color name or null (optional)" } }
-Use when the user wants to move, reschedule, rename, or edit an existing calendar event. Only include fields that are changing.
-Examples: "move my gym session to 4pm", "rename the team meeting to standup", "change my dentist to Thursday at 10am", "move lunch to tomorrow".
+{ "intent": "edit_calendar_event", "edits": [{ "searchText": "string (event name to find)", "updates": { "summary": "string (optional, new title)", "start": "ISO8601 string (optional, new start)", "end": "ISO8601 string (optional, new end)", "description": "string (optional)", "color": "color name or null (optional)" } }] }
+The edits array supports one or more edits. If the user mentions multiple events to change, include them all.
+Use when the user wants to move, reschedule, rename, or edit existing calendar events. Only include update fields that are changing.
+Examples: "move my gym session to 4pm", "rename the team meeting to standup", "move lunch to 1pm and dentist to 3pm", "change all my meetings to blueberry".
 If only the start time changes and no new end time is specified, shift the end time by the same amount.
 
 set_calendar_reminder:
@@ -473,6 +478,13 @@ export async function parseIntent(
       delete parsed.description;
       delete parsed.recurrence;
       delete parsed.color;
+    }
+
+    // Normalize old flat edit format into edits array
+    if (parsed.intent === "edit_calendar_event" && !parsed.edits && parsed.searchText) {
+      parsed.edits = [{ searchText: parsed.searchText, updates: parsed.updates }];
+      delete parsed.searchText;
+      delete parsed.updates;
     }
 
     const result = ParsedIntentSchema.safeParse(parsed);

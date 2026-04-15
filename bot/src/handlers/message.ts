@@ -249,31 +249,35 @@ export async function processText(ctx: Context, text: string): Promise<void> {
 
     case "edit_calendar_event": {
       try {
-        const event = await findEventBySearch(intent.searchText);
-        if (!event) {
-          await reply(`Couldn't find an upcoming event matching "${intent.searchText}".`);
-          break;
+        const results: string[] = [];
+        for (const edit of intent.edits) {
+          const event = await findEventBySearch(edit.searchText);
+          if (!event) {
+            results.push(`Couldn't find an upcoming event matching "${edit.searchText}".`);
+            continue;
+          }
+
+          const colorId = edit.updates.color
+            ? COLOR_NAME_TO_ID[edit.updates.color] ?? undefined
+            : undefined;
+
+          const link = await updateCalendarEvent(event.id, {
+            summary: edit.updates.summary,
+            start: edit.updates.start ? new Date(edit.updates.start) : undefined,
+            end: edit.updates.end ? new Date(edit.updates.end) : undefined,
+            description: edit.updates.description,
+            colorId,
+          });
+
+          const changes: string[] = [];
+          if (edit.updates.summary) changes.push(`renamed to "${edit.updates.summary}"`);
+          if (edit.updates.start) changes.push(`moved to ${await formatDate(new Date(edit.updates.start), chatId)}`);
+          if (edit.updates.color) changes.push(`color set to ${edit.updates.color}`);
+          const changeLabel = changes.length > 0 ? changes.join(", ") : "updated";
+
+          results.push(`"${event.summary}" ${changeLabel}\n${link}`);
         }
-
-        const colorId = intent.updates.color
-          ? COLOR_NAME_TO_ID[intent.updates.color] ?? undefined
-          : undefined;
-
-        const link = await updateCalendarEvent(event.id, {
-          summary: intent.updates.summary,
-          start: intent.updates.start ? new Date(intent.updates.start) : undefined,
-          end: intent.updates.end ? new Date(intent.updates.end) : undefined,
-          description: intent.updates.description,
-          colorId,
-        });
-
-        const changes: string[] = [];
-        if (intent.updates.summary) changes.push(`renamed to "${intent.updates.summary}"`);
-        if (intent.updates.start) changes.push(`moved to ${await formatDate(new Date(intent.updates.start), chatId)}`);
-        if (intent.updates.color) changes.push(`color set to ${intent.updates.color}`);
-        const changeLabel = changes.length > 0 ? changes.join(", ") : "updated";
-
-        await reply(`"${event.summary}" ${changeLabel}\n${link}`);
+        await reply(results.join("\n\n"));
       } catch (err) {
         if (err instanceof Error && err.message === "CALENDAR_NOT_CONNECTED") {
           const url = getAuthUrl();
